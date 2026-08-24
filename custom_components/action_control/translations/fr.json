@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Action Control",
+        "description": "Configurer Action Control. Vous définirez les règles de surveillance ensuite, depuis le bouton Configurer de l'intégration."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Action Control est déjà configuré ; une seule instance est nécessaire."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Action Control",
+        "menu_options": {
+          "add_rule": "Ajouter une règle",
+          "edit_rule_select": "Modifier une règle",
+          "delete_rule_select": "Supprimer une règle",
+          "global_settings": "Paramètres globaux"
+        }
+      },
+      "add_rule": {
+        "title": "Règle – ce qu'il faut surveiller",
+        "description": "Choisissez les appels de service surveillés par cette règle, et les entités concernées.",
+        "data": {
+          "name": "Nom",
+          "domains": "Domaines (ex. light, switch, cover)",
+          "services": "Services (vide = tous les services du domaine)",
+          "entity_id_pattern": "Motif d'entity_id (glob, ex. cover.volet_*)",
+          "name_pattern": "Motif de nom convivial (glob)",
+          "area_ids": "Pièces",
+          "label_ids": "Étiquettes",
+          "device_ids": "Appareils"
+        }
+      },
+      "rule_verify": {
+        "title": "Règle – vérification et relances",
+        "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées. Les domaines courants (light, switch, cover) sont préremplis avec des valeurs par défaut adaptées.",
+        "data": {
+          "check_delay": "Délai avant la première vérification (secondes)",
+          "attributes_to_check": "Attributs à vérifier (en plus de l'état)",
+          "tolerances": "Tolérances, sous la forme attribut:valeur, attribut2:valeur2",
+          "retries": "Nombre de relances",
+          "retry_delay": "Délai entre les relances (secondes)",
+          "wait_for_change": "Attendre qu'un attribut commence réellement à changer (ex. volets) plutôt qu'une vérification instantanée",
+          "change_attribute": "Attribut à surveiller pour détecter un changement (ex. current_position)",
+          "change_timeout": "Délai d'attente du changement (secondes)"
+        }
+      },
+      "rule_escalation": {
+        "title": "Règle – escalade et notifications",
+        "description": "Définissez éventuellement une action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante, ainsi que la façon d'être notifié.",
+        "data": {
+          "escalation_enabled": "Activer l'action d'escalade",
+          "escalation_action": "Action d'escalade",
+          "escalation_cooldown": "Délai minimum entre deux escalades (secondes)",
+          "escalation_replay_delay": "Délai après l'escalade avant de rejouer la commande (secondes)",
+          "notify_persistent": "Notifier via une notification persistante",
+          "notify_service": "Notifier également via ce service notify"
+        }
+      },
+      "edit_rule_select": {
+        "title": "Modifier une règle",
+        "data": {
+          "rule_id": "Règle"
+        }
+      },
+      "delete_rule_select": {
+        "title": "Supprimer une règle",
+        "data": {
+          "rule_id": "Règle"
+        }
+      },
+      "delete_rule_confirm": {
+        "title": "Confirmer la suppression",
+        "description": "Supprimer la règle « {rule_name} » ? Cette action est irréversible.",
+        "data": {
+          "confirm": "Confirmer la suppression"
+        }
+      },
+      "global_settings": {
+        "title": "Paramètres globaux",
+        "data": {
+          "enabled": "Action Control activé",
+          "default_retries": "Nombre de relances par défaut pour les nouvelles règles",
+          "default_retry_delay": "Délai par défaut entre les relances pour les nouvelles règles (secondes)"
+        }
+      }
+    },
+    "abort": {
+      "no_rules": "Aucune règle n'a encore été configurée."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rule_status": {
+        "name": "{rule_name}"
+      }
+    }
+  }
+}

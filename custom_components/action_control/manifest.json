@@ -1,0 +1,12 @@
+{
+  "domain": "action_control",
+  "name": "Action Control",
+  "codeowners": ["@cddu33"],
+  "config_flow": true,
+  "documentation": "https://github.com/cddu33/ha-action_control",
+  "issue_tracker": "https://github.com/cddu33/ha-action_control/issues",
+  "iot_class": "calculated",
+  "requirements": [],
+  "homeassistant": "2024.10.0",
+  "version": "0.1.0"
+}
