@@ -4,8 +4,8 @@
   "codeowners": ["@cddu33"],
   "config_flow": true,
   "documentation": "https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md",
-  "issue_tracker": "https://github.com/cddu33/ha-action_control/issues",
   "iot_class": "calculated",
+  "issue_tracker": "https://github.com/cddu33/ha-action_control/issues",
   "requirements": [],
   "version": "0.2.0"
 }
