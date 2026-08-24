@@ -36,7 +36,7 @@
       },
       "add_rule_services": {
         "title": "Rule – which services",
-        "description": "Services actually available for {domains} are suggested below; leave empty to watch every service in these domains, or type a service name that isn't listed.",
+        "description": "Services actually available for {domains} are suggested below (the union of every service across all chosen domains); leave empty to watch every service in these domains, or type a service name that isn't listed.",
         "data": {
           "services": "Services (empty = any service in the domain)"
         }
