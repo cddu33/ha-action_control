@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.action_control.const import DOMAIN, OPT_RULES
 
@@ -112,6 +113,76 @@ async def test_services_step_offers_the_chosen_domains_registered_services(hass)
 
     options = result["data_schema"].schema["services"].config["options"]
     assert set(options) == {"turn_on", "turn_off"}
+
+
+async def test_new_rule_starts_from_the_global_retry_defaults(hass):
+    entry = await _create_entry(hass)
+
+    result = await _select_menu(hass, entry, "global_settings")
+    await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"enabled": True, "default_retries": 5, "default_retry_delay": 7},
+    )
+    await hass.async_block_till_done()
+
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Defaults", "domains": ["switch"]}
+    )
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    rule = next(iter(entry.options[OPT_RULES].values()))
+    assert rule["retries"] == 5
+    assert rule["retry_delay"] == 7
+
+
+async def test_invalid_tolerances_are_rejected(hass):
+    entry = await _create_entry(hass)
+
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Lights", "domains": ["light"]}
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"tolerances": "brightness=5"}
+    )
+
+    assert result["step_id"] == "rule_verify"
+    assert result["errors"] == {"tolerances": "invalid_tolerances"}
+
+
+async def test_disabled_rule_and_deletion_removes_its_sensor(hass):
+    entry = await _create_entry(hass)
+
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Paused", "domains": ["switch"], "enabled": False}
+    )
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    await hass.async_block_till_done()
+
+    rule_id, rule_data = next(iter(entry.options[OPT_RULES].items()))
+    assert rule_data["enabled"] is False
+
+    ent_reg = er.async_get(hass)
+    unique_id = f"{entry.entry_id}_{rule_id}"
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id) is not None
+
+    result = await _select_menu(hass, entry, "delete_rule_select")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"rule_id": rule_id}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"confirm": True}
+    )
+    await hass.async_block_till_done()
+
+    assert entry.options[OPT_RULES] == {}
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id) is None
 
 
 async def test_global_settings(hass):

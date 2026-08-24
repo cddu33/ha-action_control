@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import Event, HomeAssistant, State
@@ -53,7 +53,7 @@ async def _wait_for_attribute_change(
 
 
 async def _reissue_command(
-    engine: "ActionControlEngine",
+    engine: ActionControlEngine,
     domain: str,
     service: str,
     entity_id: str,
@@ -75,7 +75,7 @@ async def _reissue_command(
 
 
 async def _run_escalation(
-    engine: "ActionControlEngine", hass: HomeAssistant, rule: Rule
+    engine: ActionControlEngine, hass: HomeAssistant, rule: Rule
 ) -> None:
     if not rule.escalation_action:
         return
@@ -114,7 +114,7 @@ def _format_message(
 
 
 async def _notify(
-    engine: "ActionControlEngine", rule: Rule, entity_id: str, message: str
+    engine: ActionControlEngine, rule: Rule, entity_id: str, message: str
 ) -> None:
     hass = engine.hass
     ctx = engine.contexts.new_context()
@@ -154,7 +154,7 @@ async def _notify(
 
 
 async def async_run_watchdog(
-    engine: "ActionControlEngine",
+    engine: ActionControlEngine,
     rule: Rule,
     entity_id: str,
     domain: str,
@@ -246,7 +246,13 @@ async def async_run_watchdog(
                     domain,
                     service,
                 )
-                _publish(engine, rule.rule_id, status, RuleStatus.RETRYING, hass.states.get(entity_id))
+                _publish(
+                    engine,
+                    rule.rule_id,
+                    status,
+                    RuleStatus.RETRYING,
+                    hass.states.get(entity_id),
+                )
                 await _reissue_command(engine, domain, service, entity_id, service_data)
                 moved = await _wait_for_attribute_change(
                     hass, entity_id, rule.change_attribute, baseline, rule.change_timeout
@@ -260,7 +266,9 @@ async def async_run_watchdog(
             # whether change_attribute happens to be in attributes_to_check
             # (it usually isn't -- the cover preset relies on this check
             # instead of a snapshot tolerance comparison on position).
-            current_value = final_state.attributes.get(rule.change_attribute) if final_state else None
+            current_value = (
+                final_state.attributes.get(rule.change_attribute) if final_state else None
+            )
             no_movement_mismatch = Mismatch(
                 rule.change_attribute,
                 messages.render(
@@ -318,7 +326,9 @@ async def async_run_watchdog(
             # not each fire the recovery action.
             engine.arm_escalation_cooldown(rule.rule_id, rule.escalation_cooldown)
             _LOGGER.debug(
-                "Rule '%s': retries exhausted for %s, running escalation action", rule.name, entity_id
+                "Rule '%s': retries exhausted for %s, running escalation action",
+                rule.name,
+                entity_id,
             )
             await _run_escalation(engine, hass, rule)
             await asyncio.sleep(rule.escalation_replay_delay)
@@ -332,7 +342,9 @@ async def async_run_watchdog(
             await _reissue_command(engine, domain, service, entity_id, service_data)
         elif can_escalate:
             _LOGGER.debug(
-                "Rule '%s': retries exhausted for %s, escalation still in cooldown", rule.name, entity_id
+                "Rule '%s': retries exhausted for %s, escalation still in cooldown",
+                rule.name,
+                entity_id,
             )
         elif rule.escalation_enabled:
             _LOGGER.warning(
@@ -376,7 +388,7 @@ async def async_run_watchdog(
 
 
 def _publish(
-    engine: "ActionControlEngine",
+    engine: ActionControlEngine,
     rule_id: str,
     status: RuleRunStatus,
     outcome: RuleStatus,
@@ -385,5 +397,5 @@ def _publish(
     status.status = outcome
     status.actual_state = state.state if state else None
     status.actual_attributes = dict(state.attributes) if state else {}
-    status.last_checked = datetime.now(timezone.utc).isoformat()
+    status.last_checked = datetime.now(UTC).isoformat()
     engine.set_status(rule_id, status)

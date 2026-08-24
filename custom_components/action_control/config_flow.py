@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
 from homeassistant.const import Platform
 from homeassistant.core import callback
@@ -81,7 +80,7 @@ class ActionControlConfigFlow(ConfigFlow, domain=c.DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: Any) -> "ActionControlOptionsFlow":
+    def async_get_options_flow(config_entry: Any) -> ActionControlOptionsFlow:
         return ActionControlOptionsFlow()
 
 

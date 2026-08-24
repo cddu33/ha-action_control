@@ -1,10 +1,9 @@
 """Tests for target resolution and rule-matching filters."""
 from __future__ import annotations
 
-import pytest
 from homeassistant.helpers import area_registry as ar
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
 from homeassistant.helpers import label_registry as lr
 
 from custom_components.action_control import matching
@@ -23,6 +22,44 @@ async def test_resolve_entities_from_area(hass):
 
     resolved = matching.resolve_target_entities(hass, {"area_id": [area.id]})
     assert entry.entity_id in resolved
+
+
+async def test_resolve_entities_from_floor(hass):
+    floor = fr.async_get(hass).async_create("Upstairs")
+    area_reg = ar.async_get(hass)
+    area = area_reg.async_get_or_create("Bedroom")
+    area_reg.async_update(area.id, floor_id=floor.floor_id)
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "light", "test", "bedroom_light", suggested_object_id="bedroom"
+    )
+    ent_reg.async_update_entity(entry.entity_id, area_id=area.id)
+    hass.states.async_set(entry.entity_id, "off")
+
+    resolved = matching.resolve_target_entities(hass, {"floor_id": [floor.floor_id]})
+    assert entry.entity_id in resolved
+
+
+async def test_disabled_entities_are_never_resolved(hass):
+    """A disabled entity has no state, so watching it would fail forever."""
+    area = ar.async_get(hass).async_get_or_create("Office")
+    ent_reg = er.async_get(hass)
+    enabled = ent_reg.async_get_or_create(
+        "light", "test", "office_light", suggested_object_id="office"
+    )
+    disabled = ent_reg.async_get_or_create(
+        "light",
+        "test",
+        "spare_light",
+        suggested_object_id="spare",
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    for entry in (enabled, disabled):
+        ent_reg.async_update_entity(entry.entity_id, area_id=area.id)
+
+    resolved = matching.resolve_target_entities(hass, {"area_id": [area.id]})
+    assert enabled.entity_id in resolved
+    assert disabled.entity_id not in resolved
 
 
 async def test_rule_matches_service_domain_and_service():

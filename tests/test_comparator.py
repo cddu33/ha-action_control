@@ -11,13 +11,17 @@ def _state(state: str, **attrs) -> State:
 
 
 def test_scalar_within_tolerance_ok():
-    result = comparator.compare("on", {"brightness": 200}, {"brightness": 5}, _state("on", brightness=203))
+    result = comparator.compare(
+        "on", {"brightness": 200}, {"brightness": 5}, _state("on", brightness=203)
+    )
     assert result.ok
     assert result.mismatches == []
 
 
 def test_scalar_outside_tolerance_fails():
-    result = comparator.compare("on", {"brightness": 200}, {"brightness": 5}, _state("on", brightness=150))
+    result = comparator.compare(
+        "on", {"brightness": 200}, {"brightness": 5}, _state("on", brightness=150)
+    )
     assert not result.ok
     assert result.mismatches[0].attribute == "brightness"
 

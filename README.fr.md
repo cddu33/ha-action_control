@@ -10,12 +10,47 @@ Contrôle générique, configurable via l'interface Home Assistant, de la bonne
 exécution de vos commandes (`light.turn_on`, `switch.turn_off`,
 `cover.set_cover_position`, ou n'importe quel autre appel de service).
 
-Cette intégration généralise le principe de deux automations YAML :
-vérifier qu'une commande a bien été appliquée, la relancer en cas d'échec,
-notifier, et éventuellement déclencher une action de secours (par exemple
+Elle vérifie qu'une commande a bien été appliquée, la relance en cas
+d'échec, notifie, et peut déclencher une action de secours (par exemple
 activer un switch) si le problème persiste — le tout sans écrire de YAML,
 et sans risque de boucle de réémission grâce à un mécanisme anti-boucle
 interne basé sur le `Context` de Home Assistant.
+
+## Fonctionnalités
+
+- **Vérification générique des commandes** — surveille n'importe quel appel
+  de domaine/service, pas seulement light/switch/cover.
+- **Ciblage personnalisable par règle** — domaine(s), service(s), motif glob
+  d'`entity_id`, motif de nom, pièces, étiquettes et/ou appareils.
+- **Vérification avec tolérance** — tolérance scalaire (ex. `brightness`
+  ±5), tolérance élément par élément pour les attributs de type liste
+  (`rgb_color`, `xy_color`), égalité stricte pour le texte et les booléens.
+- **Détection de mouvement** — pour les volets par exemple, attend qu'un
+  attribut (ex. `current_position`) commence réellement à changer plutôt que
+  de comparer un instantané.
+- **Sortie immédiate si déjà satisfait** — une commande sans effet, ou déjà
+  appliquée quand l'événement se déclenche, se résout instantanément, sans
+  délai ni notification.
+- **Relances configurables** — nombre et délai, par règle.
+- **Escalade configurable** — action de secours optionnelle (activer un
+  switch, lancer un script...) déclenchée après échec persistant, avec un
+  délai de recharge entre deux escalades et un délai avant de rejouer la
+  commande d'origine.
+- **Notifications** — notification persistante et/ou service `notify.*` de
+  votre choix, par règle.
+- **Protection anti-boucle intégrée** — chaque commande réémise porte son
+  propre `Context` mémorisé, donc l'événement `call_service` correspondant
+  est reconnu et ignoré avant de pouvoir redéclencher une règle. Aucune
+  entité de garde à configurer.
+- **Entièrement configurable par l'interface** — Config Flow (installation)
+  + Options Flow (ajout/modification/suppression de règles, paramètres
+  globaux). Aucun YAML nécessaire.
+- **Capteur de statut par règle** — un capteur de diagnostic (`ok` /
+  `retrying` / `escalated` / `failed`) avec le détail de la dernière
+  vérification.
+- **Règles suspendables** — une règle peut être désactivée sans être
+  supprimée.
+- **Interface bilingue** — français et anglais.
 
 ## Installation
 

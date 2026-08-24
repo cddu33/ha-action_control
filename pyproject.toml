@@ -1,0 +1,10 @@
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "BLE", "SLF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into the engine internals on purpose.
+"tests/*" = ["SLF"]

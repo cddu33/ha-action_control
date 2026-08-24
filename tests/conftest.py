@@ -37,7 +37,7 @@ def make_cover_rule(**overrides) -> Rule:
         entity_id_pattern="cover.volet_*",
         wait_for_change=True,
         change_attribute="current_position",
-        change_timeout=1,
+        change_timeout=0.1,
         retries=1,
         escalation_enabled=True,
         escalation_action=[
@@ -50,14 +50,22 @@ def make_cover_rule(**overrides) -> Rule:
     return Rule(**defaults)
 
 
-@pytest.fixture
-def mock_config_entry() -> MockConfigEntry:
-    rule = make_light_rule()
+def make_entry(rule: Rule, *, enabled: bool = True) -> MockConfigEntry:
     return MockConfigEntry(
         domain=DOMAIN,
         title="Action Control",
         options={
             OPT_RULES: {rule.rule_id: rule.to_dict()},
-            OPT_GLOBAL: {"enabled": True},
+            OPT_GLOBAL: {"enabled": enabled},
         },
     )
+
+
+@pytest.fixture
+def mock_config_entry() -> MockConfigEntry:
+    return make_entry(make_light_rule())
+
+
+@pytest.fixture
+def mock_cover_config_entry() -> MockConfigEntry:
+    return make_entry(make_cover_rule())

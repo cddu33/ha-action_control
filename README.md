@@ -11,12 +11,11 @@ your commands (`light.turn_on`, `switch.turn_off`,
 `cover.set_cover_position`, or any other service call) actually took
 effect.
 
-This integration generalizes the pattern behind two hand-written YAML
-automations: check that a command was actually applied, retry it on
-failure, notify you, and optionally trigger a recovery action (e.g.
-turning on a switch) if the problem persists — all without writing any
-YAML, and without risk of a retry loop thanks to a built-in anti-loop
-mechanism based on Home Assistant's `Context`.
+It checks that a command was actually applied, retries it on failure,
+notifies you, and can trigger a recovery action (e.g. turning on a switch)
+if the problem persists — all without writing any YAML, and without risk of
+a retry loop thanks to a built-in anti-loop mechanism based on Home
+Assistant's `Context`.
 
 ## Features
 
@@ -48,6 +47,7 @@ mechanism based on Home Assistant's `Context`.
   (add/edit/delete rules, global settings). No YAML required.
 - **Per-rule status sensor** — a diagnostic sensor (`ok` / `retrying` /
   `escalated` / `failed`) with the details of the last check.
+- **Rules can be paused** — a rule can be disabled without deleting it.
 - **Bilingual UI** — English and French.
 
 ## Installation

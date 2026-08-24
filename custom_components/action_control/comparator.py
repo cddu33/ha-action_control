@@ -92,7 +92,7 @@ def _values_match(expected: Any, actual: Any, tolerance: float) -> bool:
             return False
         return all(
             _values_match(exp_item, act_item, tolerance)
-            for exp_item, act_item in zip(expected, actual)
+            for exp_item, act_item in zip(expected, actual, strict=True)
         )
     if isinstance(expected, (int, float)) and not isinstance(expected, bool):
         if isinstance(actual, bool) or not isinstance(actual, (int, float)):

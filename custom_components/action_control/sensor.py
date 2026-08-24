@@ -1,12 +1,12 @@
 """Per-rule status sensor: ok / retrying / escalated / failed / idle."""
 from __future__ import annotations
 
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 
 from .const import DATA_ENGINE, DOMAIN
 from .coordinator import SIGNAL_RULE_UPDATE, ActionControlEngine

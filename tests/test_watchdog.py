@@ -1,9 +1,13 @@
 """Integration-style tests: call_service event -> verify/retry/notify flow."""
 from __future__ import annotations
 
+import pytest
 from homeassistant.core import ServiceCall
 
+from custom_components.action_control import watchdog
 from custom_components.action_control.const import DATA_ENGINE, DOMAIN
+from custom_components.action_control.models import RuleStatus
+from tests.conftest import make_entry, make_light_rule
 
 
 async def _setup(hass, mock_config_entry):
@@ -111,3 +115,132 @@ async def test_already_satisfied_command_exits_immediately_without_retry(
 
     # Only the user's own original call went through -- no watchdog retry.
     assert len(calls) == 1
+
+
+async def test_escalation_runs_once_for_several_failing_entities(
+    hass, mock_cover_config_entry
+):
+    """The cooldown must be armed before the action runs, not after it."""
+    await _setup(hass, mock_cover_config_entry)
+
+    for entity_id in ("cover.volet_salon", "cover.volet_cuisine"):
+        hass.states.async_set(entity_id, "closed", {"current_position": 0})
+
+    restarts: list[ServiceCall] = []
+    hass.services.async_register("cover", "open_cover", lambda call: None)
+    hass.services.async_register("script", "restart_velux", lambda call: restarts.append(call))
+    hass.services.async_register("persistent_notification", "create", lambda call: None)
+
+    await hass.services.async_call(
+        "cover",
+        "open_cover",
+        target={"entity_id": ["cover.volet_salon", "cover.volet_cuisine"]},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(restarts) == 1
+
+
+async def test_a_failing_command_still_reports(hass, mock_config_entry):
+    """A service call that raises must not kill the run silently."""
+    await _setup(hass, mock_config_entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    notifications: list[dict] = []
+
+    async def _turn_on(call: ServiceCall) -> None:
+        raise RuntimeError("device offline")
+
+    hass.services.async_register("light", "turn_on", _turn_on)
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+
+    with pytest.raises(RuntimeError):
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"brightness": 200},
+            target={"entity_id": "light.kitchen"},
+            blocking=True,
+        )
+    await hass.async_block_till_done()
+
+    assert len(notifications) == 1
+
+
+async def test_a_failing_notification_does_not_skip_the_notify_service(hass):
+    entry = make_entry(make_light_rule(notify_service="mobile"))
+    engine = await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    notified: list[ServiceCall] = []
+
+    async def _boom(call: ServiceCall) -> None:
+        raise RuntimeError("notifications are down")
+
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    hass.services.async_register("persistent_notification", "create", _boom)
+    hass.services.async_register("notify", "mobile", lambda call: notified.append(call))
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(notified) == 1
+    rule_id = next(iter(engine.rules))
+    assert engine.rule_status[rule_id].status is RuleStatus.FAILED
+
+
+async def test_global_switch_off_watches_nothing(hass):
+    entry = make_entry(make_light_rule(), enabled=False)
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    calls: list[ServiceCall] = []
+    hass.services.async_register("light", "turn_on", lambda call: calls.append(call))
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(calls) == 1
+
+
+async def test_a_superseded_run_is_dropped(hass, mock_config_entry):
+    """A newer command for the same entity invalidates a queued check."""
+    engine = await _setup(hass, mock_config_entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    calls: list[ServiceCall] = []
+    hass.services.async_register("light", "turn_on", lambda call: calls.append(call))
+
+    rule = next(iter(engine.rules.values()))
+    engine.next_run_token(rule.rule_id, "light.kitchen")
+
+    await watchdog.async_run_watchdog(
+        engine,
+        rule,
+        "light.kitchen",
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        frozenset({"on"}),
+        {"brightness": 200},
+        run_token=0,
+    )
+
+    assert calls == []
