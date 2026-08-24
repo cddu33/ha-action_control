@@ -27,8 +27,8 @@
         "data": {
           "name": "Nom",
           "domains": "Domaines",
-          "entity_id_pattern": "Motif d'entity_id (glob, ex. cover.volet_*)",
-          "name_pattern": "Motif de nom convivial (glob)",
+          "entity_id_pattern": "Entity_id (glob, ex. cover.volet_*)",
+          "name_pattern": "Nom (glob)",
           "area_ids": "Pièces",
           "label_ids": "Étiquettes",
           "device_ids": "Appareils"
@@ -36,28 +36,28 @@
       },
       "add_rule_services": {
         "title": "Règle – quels services",
-        "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous (l'union de tous les services des domaines choisis) ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
+        "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
         "data": {
           "services": "Services (vide = tous les services du domaine)"
         }
       },
       "rule_verify": {
         "title": "Règle – vérification et relances",
-        "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées. Quel que soit le domaine choisi, des valeurs par défaut adaptées sont préremplies pour light, switch et cover ; tout autre domaine part d'une simple vérification d'état, à affiner ici.",
+        "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées.",
         "data": {
           "check_delay": "Délai avant la première vérification (secondes)",
           "attributes_to_check": "Attributs à vérifier (en plus de l'état)",
           "tolerances": "Tolérances, sous la forme attribut:valeur, attribut2:valeur2",
           "retries": "Nombre de relances",
           "retry_delay": "Délai entre les relances (secondes)",
-          "wait_for_change": "Attendre qu'un attribut commence réellement à changer (ex. volets) plutôt qu'une vérification instantanée",
+          "wait_for_change": "Attendre qu'un attribut commence réellement à changer (ex. volets position) plutôt qu'une vérification instantanée",
           "change_attribute": "Attribut à surveiller pour détecter un changement (ex. current_position)",
           "change_timeout": "Délai d'attente du changement (secondes)"
         }
       },
       "rule_escalation": {
         "title": "Règle – escalade et notifications",
-        "description": "Définissez éventuellement une action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante, ainsi que la façon d'être notifié.",
+        "description": "Définissez (optionnel) une action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante, ainsi que la façon d'être notifié.",
         "data": {
           "escalation_enabled": "Activer l'action d'escalade",
           "escalation_action": "Action d'escalade",
