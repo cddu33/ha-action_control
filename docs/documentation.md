@@ -21,9 +21,11 @@ the event fired for *every* service call, regardless of what triggered it
 integration). For each rule you have configured, on a matching call it:
 
 1. **Resolves the target entities** — from `entity_id`, `device_id`,
-   `area_id` and/or `label_id` on the call, using the entity and device
-   registries, then keeps only the entities that also pass the rule's own
-   filters (domain, patterns, areas, labels, devices).
+   `area_id`, `label_id` and/or `floor_id` on the call, using the entity,
+   device and area registries, then keeps only the entities that also pass
+   the rule's own filters (domain, patterns, areas, labels, devices).
+   Disabled entities, and entities with no state at all, are skipped: they
+   could only ever fail the check.
 2. **Computes what to expect** — the state the service implies, plus the
    attributes the call actually carried. This happens synchronously, in
    the event callback itself, so a `toggle` is judged against the state as
@@ -60,8 +62,9 @@ as-is.
 
 Only one run at a time per (rule, entity) pair: if the same entity is
 commanded again while a check is still in flight, the second run waits for
-the first one to finish instead of racing it. Several rules matching the
-same call each run independently.
+the first one to finish instead of racing it, and the older run is then
+dropped rather than re-issuing a command that no longer reflects what was
+asked. Several rules matching the same call each run independently.
 
 ### Anti-loop protection
 
@@ -101,6 +104,7 @@ flight and resets the status sensors to `idle`.
 | Field | Description |
 |---|---|
 | Name | Label shown on the rule's status sensor and in notifications. |
+| Rule enabled | Off pauses the rule without deleting it — its sensor stays, nothing is watched. Paused rules are prefixed with ⏸ in the rule pickers. |
 | Domains | One or more domains this rule watches (e.g. `light`, `switch`, `cover`). Required. The picker lists the domains currently present in your instance, translated, and also accepts a domain typed by hand. |
 | Services | Services within those domains to watch (e.g. `turn_on`). Suggestions cover every service of the chosen domains. Leave empty to watch every service in those domains. |
 | Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) the `entity_id` must match. Case-sensitive. |
@@ -147,33 +151,46 @@ from a plain state-only check that you can refine with the fields above.
 | Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
 | Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
 
+The cooldown is armed *before* the recovery action runs, and it survives a
+restart, so entities failing at the same moment cannot fire the action
+several times over. Escalation enabled without a configured action does
+nothing and is logged as a warning.
+
 The failure notification is sent right after the replay, without waiting
 again: it describes the state observed at that moment, and mentions that a
-recovery action was triggered. The replay itself is not re-verified — if it
-works, the next status update comes from the next command on that entity.
+recovery action was triggered. It carries a stable notification id per
+(rule, entity), so a repeated failure replaces its notification instead of
+stacking a new one. The replay itself is not re-verified — if it works, the
+next status update comes from the next command on that entity.
 
 ### Global settings
 
 | Field | Description | Default (range) |
 |---|---|---|
 | Action Control enabled | Master switch. When off, `call_service` events are ignored: no check, no retry, no notification. Rules keep their configuration. | on |
-| Default number of retries for new rules | Stored, but **not applied yet** when creating a rule — see [Known limitations](#known-limitations). | 2 (0–10) |
-| Default delay between retries for new rules | Same. | 2 (0–600) |
+| Default number of retries for new rules | Pre-fills the retry field of a **new** rule. Existing rules keep their own value. | 2 (0–10) |
+| Default delay between retries for new rules | Same, for the delay between retries. | 2 (0–600) |
 
 ## What gets compared
 
 **Expected state.** It is derived from the service being called:
 
-| Service | Expected state |
+| Service | Expected state(s) |
 |---|---|
-| `turn_on` | `on` |
-| `turn_off` | `off` |
-| `open_cover` | `open` |
-| `close_cover` | `closed` |
-| `lock` | `locked` |
-| `unlock` | `unlocked` |
-| `toggle` | the opposite of the state at the moment of the call |
+| `turn_on` / `turn_off`, on/off domains only | `on` / `off` |
+| `toggle`, on/off domains only | the opposite of the state at the moment of the call |
+| `cover.open_cover`, `valve.open_valve` | `open` or `opening` |
+| `cover.close_cover`, `valve.close_valve` | `closed` or `closing` |
+| `cover.toggle`, `valve.toggle` | `closed`/`closing` if it was open, `open`/`opening` otherwise |
+| `lock.lock` / `lock.unlock` / `lock.open` | `locked`/`locking`, `unlocked`/`unlocking`, `open`/`opening`/`unlocked` |
 | any other service | none — only the attributes are compared |
+
+The on/off domains are `light`, `switch`, `fan`, `siren`, `input_boolean`,
+`humidifier`, `remote` and `automation`. Anything else — `climate`,
+`media_player`, `water_heater`, ... — gets no expected state from
+`turn_on`/`toggle`, because "on" is not what those entities report. States
+that mean "on its way" (`opening`, `closing`, `locking`, ...) are accepted:
+that is what movement mode is for.
 
 **Expected attributes.** An attribute listed in *Attributes to check* is
 only compared if the service call actually carried it: `light.turn_on`
@@ -181,8 +198,11 @@ without `brightness` does not check the brightness, even when `brightness`
 is in the list. Two aliases handle service-data keys that differ from the
 state attribute name:
 
-- `cover.set_cover_position`: `position` → `current_position`
+- `cover.set_cover_position`, `valve.set_valve_position`: `position` →
+  `current_position`
 - `cover.set_cover_tilt_position`: `tilt_position` → `current_tilt_position`
+- `light.turn_on`: `brightness_pct` → `brightness` (converted to 0–255) and
+  `kelvin` → `color_temp_kelvin`; an explicit `brightness` in the call wins
 
 **Comparison rules.**
 
@@ -208,7 +228,8 @@ outcome:
 | `escalated` | Verification failed and the escalation action was run. |
 | `failed` | Verification failed (no escalation, or still in cooldown). |
 
-Attributes: `entity_id`, `expected_state`, `expected_attributes`,
+The state labels are translated (English/French), as are the notification
+texts. Attributes: `entity_id`, `expected_state`, `expected_attributes`,
 `actual_state`, `actual_attributes`, `attempt`, `mismatches`,
 `last_checked` (UTC, ISO 8601).
 
@@ -296,7 +317,8 @@ without debug logging.
    is in its list, and some helpers call services under their own domain
    (`homeassistant.turn_on` is a call in the `homeassistant` domain).
 3. `... resolved to no entities` means the call carried no resolvable
-   target.
+   target; `has no state, nothing to watch` means the entity does not exist
+   in Home Assistant (a disabled entity never gets watched either).
 4. No `watching ...` line for your entity means one of the rule's filters
    (pattern, area, label, device) rejected it.
 5. `Ignoring self-issued call_service event` means the call came from
@@ -304,12 +326,8 @@ without debug logging.
 
 ## Known limitations
 
-- **Notification texts are French only.** Failure messages and the
-  `mismatches` sensor attribute are hard-coded in French, whatever the
-  Home Assistant language.
-- **The global default retries/delay are not applied yet.** They're saved,
-  but a new rule still starts from 2 retries / 2 s; set the values on the
-  rule itself.
+- **Notification texts ship in English and French only**, picked from the
+  Home Assistant language, English for anything else.
 - **One status sensor per rule**, so a command targeting many entities at
   once only leaves the last outcome on the sensor.
 - **Editing rules reloads the integration**, which cancels in-flight

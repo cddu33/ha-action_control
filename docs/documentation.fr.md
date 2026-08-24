@@ -22,9 +22,11 @@ vocal, une autre intégration). Pour chaque règle configurée, sur un appel
 correspondant :
 
 1. **Résout les entités ciblées** — à partir d'`entity_id`, `device_id`,
-   `area_id` et/ou `label_id` de l'appel, via les registres entité et
-   appareil, puis ne garde que les entités qui passent aussi les filtres
-   de la règle (domaine, motifs, pièces, étiquettes, appareils).
+   `area_id`, `label_id` et/ou `floor_id` de l'appel, via les registres
+   entité, appareil et pièce, puis ne garde que les entités qui passent
+   aussi les filtres de la règle (domaine, motifs, pièces, étiquettes,
+   appareils). Les entités désactivées, et celles sans état, sont écartées :
+   elles ne pourraient que faire échouer la vérification.
 2. **Calcule ce qui est attendu** — l'état impliqué par le service, et les
    attributs réellement transmis dans l'appel. Ce calcul est fait de façon
    synchrone, dans le callback de l'événement : un `toggle` est donc jugé
@@ -61,10 +63,12 @@ ciblage d'origine (`entity_id`, `device_id`, `area_id`, `label_id`,
 données de service étant conservé tel quel.
 
 Une seule exécution à la fois par couple (règle, entité) : si la même
-entité reçoit une nouvelle commande alors qu'une vérification est encore
-en cours, la seconde attend la fin de la première au lieu d'entrer en
-concurrence avec elle. Plusieurs règles qui correspondent au même appel
-s'exécutent indépendamment.
+entité reçoit une nouvelle commande alors qu'une vérification est encore en
+cours, la seconde attend la fin de la première au lieu d'entrer en
+concurrence avec elle, et l'ancienne est ensuite abandonnée plutôt que de
+réémettre une commande qui ne correspond plus à ce qui a été demandé.
+Plusieurs règles qui correspondent au même appel s'exécutent
+indépendamment.
 
 ### Protection anti-boucle
 
@@ -107,6 +111,7 @@ de statut sur `idle`.
 | Champ | Description |
 |---|---|
 | Nom | Libellé affiché sur le capteur de statut de la règle et dans les notifications. |
+| Règle activée | Désactivée, la règle est mise en pause sans être supprimée — son capteur reste, mais plus rien n'est surveillé. Les règles en pause sont préfixées par ⏸ dans les listes de sélection. |
 | Domaines | Un ou plusieurs domaines surveillés par cette règle (ex. `light`, `switch`, `cover`). Obligatoire. La liste propose les domaines réellement présents dans votre instance, traduits, et accepte aussi un domaine saisi à la main. |
 | Services | Services surveillés dans ces domaines (ex. `turn_on`). Les suggestions correspondent à tous les services des domaines choisis. Laisser vide pour surveiller tous les services de ces domaines. |
 | Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. Sensible à la casse. |
@@ -157,34 +162,47 @@ ci-dessus.
 | Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
 | Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
 
+Le délai de recharge est armé *avant* l'exécution de l'action de secours,
+et il survit à un redémarrage : des entités qui échouent au même moment ne
+peuvent donc pas déclencher l'action plusieurs fois. Une escalade activée
+sans action configurée ne fait rien et est journalisée en avertissement.
+
 La notification d'échec part juste après le rejeu, sans nouvelle attente :
 elle décrit donc l'état observé à ce moment-là et signale qu'une action de
-secours a été déclenchée. Le rejeu lui-même n'est pas re-vérifié — s'il
-fonctionne, la mise à jour suivante du statut viendra de la prochaine
-commande sur cette entité.
+secours a été déclenchée. Elle porte un identifiant stable par (règle,
+entité) : un échec répété remplace sa notification au lieu d'en empiler une
+nouvelle. Le rejeu lui-même n'est pas re-vérifié — s'il fonctionne, la mise
+à jour suivante du statut viendra de la prochaine commande sur cette
+entité.
 
 ### Paramètres globaux
 
 | Champ | Description | Par défaut (plage) |
 |---|---|---|
 | Action Control activé | Interrupteur général. Désactivé, les événements `call_service` sont ignorés : aucune vérification, aucune relance, aucune notification. Les règles conservent leur configuration. | activé |
-| Nombre de relances par défaut pour les nouvelles règles | Enregistré, mais **pas encore appliqué** à la création d'une règle — voir [Limites connues](#limites-connues). | 2 (0–10) |
-| Délai par défaut entre les relances pour les nouvelles règles | Idem. | 2 (0–600) |
+| Nombre de relances par défaut pour les nouvelles règles | Prérempli le champ correspondant d'une **nouvelle** règle. Les règles existantes gardent leur propre valeur. | 2 (0–10) |
+| Délai par défaut entre les relances pour les nouvelles règles | Idem, pour le délai entre les relances. | 2 (0–600) |
 
 ## Ce qui est comparé
 
 **État attendu.** Il est déduit du service appelé :
 
-| Service | État attendu |
+| Service | État(s) attendu(s) |
 |---|---|
-| `turn_on` | `on` |
-| `turn_off` | `off` |
-| `open_cover` | `open` |
-| `close_cover` | `closed` |
-| `lock` | `locked` |
-| `unlock` | `unlocked` |
-| `toggle` | l'inverse de l'état au moment de l'appel |
+| `turn_on` / `turn_off`, domaines on/off uniquement | `on` / `off` |
+| `toggle`, domaines on/off uniquement | l'inverse de l'état au moment de l'appel |
+| `cover.open_cover`, `valve.open_valve` | `open` ou `opening` |
+| `cover.close_cover`, `valve.close_valve` | `closed` ou `closing` |
+| `cover.toggle`, `valve.toggle` | `closed`/`closing` s'il était ouvert, `open`/`opening` sinon |
+| `lock.lock` / `lock.unlock` / `lock.open` | `locked`/`locking`, `unlocked`/`unlocking`, `open`/`opening`/`unlocked` |
 | tout autre service | aucun — seuls les attributs sont comparés |
+
+Les domaines on/off sont `light`, `switch`, `fan`, `siren`, `input_boolean`,
+`humidifier`, `remote` et `automation`. Tout le reste — `climate`,
+`media_player`, `water_heater`... — n'a aucun état attendu pour
+`turn_on`/`toggle`, parce que « on » n'est pas ce que ces entités
+rapportent. Les états transitoires (`opening`, `closing`, `locking`...) sont
+acceptés : c'est le mode Mouvement qui surveille le déplacement lui-même.
 
 **Attributs attendus.** Un attribut listé dans *Attributs à vérifier*
 n'est comparé que s'il était réellement présent dans l'appel de service :
@@ -192,8 +210,12 @@ un `light.turn_on` sans `brightness` ne vérifie donc pas la luminosité,
 même si `brightness` figure dans la liste. Deux alias gèrent les clés de
 données de service dont le nom diffère de celui de l'attribut d'état :
 
-- `cover.set_cover_position` : `position` → `current_position`
+- `cover.set_cover_position`, `valve.set_valve_position` : `position` →
+  `current_position`
 - `cover.set_cover_tilt_position` : `tilt_position` → `current_tilt_position`
+- `light.turn_on` : `brightness_pct` → `brightness` (converti en 0–255) et
+  `kelvin` → `color_temp_kelvin` ; un `brightness` explicite dans l'appel
+  reste prioritaire
 
 **Règles de comparaison.**
 
@@ -220,9 +242,10 @@ dernier résultat connu :
 | `escalated` | La vérification a échoué et l'action d'escalade a été exécutée. |
 | `failed` | La vérification a échoué (pas d'escalade, ou délai de recharge non écoulé). |
 
-Attributs : `entity_id`, `expected_state`, `expected_attributes`,
-`actual_state`, `actual_attributes`, `attempt`, `mismatches`,
-`last_checked` (UTC, ISO 8601).
+Les libellés d'état sont traduits (français/anglais), tout comme les
+textes de notification. Attributs : `entity_id`, `expected_state`,
+`expected_attributes`, `actual_state`, `actual_attributes`, `attempt`,
+`mismatches`, `last_checked` (UTC, ISO 8601).
 
 Le capteur reflète la **dernière** exécution de la règle. Quand une
 commande vise plusieurs entités, toutes sont surveillées, mais le capteur
@@ -314,7 +337,9 @@ activé.
    services sous leur propre domaine (`homeassistant.turn_on` est un appel
    du domaine `homeassistant`).
 3. `... resolved to no entities` signifie que l'appel ne portait aucune
-   cible exploitable.
+   cible exploitable ; `has no state, nothing to watch` signifie que
+   l'entité n'existe pas dans Home Assistant (une entité désactivée n'est
+   jamais surveillée non plus).
 4. L'absence de ligne `watching ...` pour votre entité signifie qu'un des
    filtres de la règle (motif, pièce, étiquette, appareil) l'a écartée.
 5. `Ignoring self-issued call_service event` signifie que l'appel venait
@@ -323,13 +348,8 @@ activé.
 
 ## Limites connues
 
-- **Les textes de notification sont uniquement en français.** Les messages
-  d'échec et l'attribut `mismatches` du capteur sont écrits en dur en
-  français, quelle que soit la langue de Home Assistant.
-- **Les valeurs globales de relance par défaut ne sont pas encore
-  appliquées.** Elles sont enregistrées, mais une nouvelle règle part
-  toujours de 2 relances / 2 s ; réglez les valeurs dans la règle
-  elle-même.
+- **Les textes de notification n'existent qu'en français et en anglais**,
+  choisis selon la langue de Home Assistant, anglais par défaut.
 - **Un seul capteur de statut par règle** : une commande visant plusieurs
   entités à la fois ne laisse que le dernier résultat sur le capteur.
 - **Modifier une règle recharge l'intégration**, ce qui annule les
