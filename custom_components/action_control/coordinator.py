@@ -82,6 +82,12 @@ class ActionControlEngine:
         if not self.enabled or not self.rules:
             return
         if event.context and self.contexts.is_self_issued(event.context.id):
+            _LOGGER.debug(
+                "Ignoring self-issued call_service event (context %s): %s.%s",
+                event.context.id,
+                event.data.get("domain"),
+                event.data.get("service"),
+            )
             return
 
         domain = event.data.get("domain")
@@ -98,6 +104,14 @@ class ActionControlEngine:
         if not matching_rules:
             return
 
+        _LOGGER.debug(
+            "call_service %s.%s matches rule(s) %s, resolving targets from %s",
+            domain,
+            service,
+            [rule.name for rule in matching_rules],
+            service_data,
+        )
+
         # Entity resolution and expected-state computation happen entirely
         # synchronously, in this same callback invocation, so that a
         # "toggle" call's expected outcome is derived from the state as it
@@ -105,6 +119,7 @@ class ActionControlEngine:
         # already changed by the time an async-scheduled task got to run.
         entities = matching.resolve_target_entities(self.hass, service_data)
         if not entities:
+            _LOGGER.debug("%s.%s resolved to no entities, nothing to watch", domain, service)
             return
 
         for rule in matching_rules:
@@ -114,6 +129,15 @@ class ActionControlEngine:
                 current_state = self.hass.states.get(entity_id)
                 expected_state, expected_attrs = comparator.compute_expected(
                     domain, service, service_data, rule.attributes_to_check, current_state
+                )
+                _LOGGER.debug(
+                    "Rule '%s': watching %s after %s.%s (expected_state=%s, expected_attrs=%s)",
+                    rule.name,
+                    entity_id,
+                    domain,
+                    service,
+                    expected_state,
+                    expected_attrs,
                 )
                 task = self.hass.async_create_task(
                     watchdog.async_run_watchdog(

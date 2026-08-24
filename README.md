@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/logo.png" alt="Action Control" width="256">
+</p>
+
 # Action Control
 
 *English | [Français](README.fr.md)*
