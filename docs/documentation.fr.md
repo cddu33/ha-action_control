@@ -2,62 +2,103 @@
 
 *[English](documentation.md) | [Français](documentation.fr.md)*
 
-Cette page est la référence détaillée d'**Action Control**. Pour un
-aperçu rapide, la liste des fonctionnalités et l'installation, voir le
-[README principal](../README.fr.md).
-
 ## Sommaire
 
 - [Fonctionnement](#fonctionnement)
+- [Configurer les règles](#configurer-les-règles)
 - [Référence des champs de règle](#référence-des-champs-de-règle)
+- [Ce qui est comparé](#ce-qui-est-comparé)
+- [Capteur de statut](#capteur-de-statut)
 - [Exemples](#exemples)
 - [Journalisation de débogage](#journalisation-de-débogage)
-- [FAQ](#faq)
+- [Limites connues](#limites-connues)
 
 ## Fonctionnement
 
 Action Control écoute l'événement interne `call_service` de Home
 Assistant — l'événement émis pour *chaque* appel de service, quelle que
-soit son origine (une personne, une automation, un script, une autre
-intégration). Pour chaque règle configurée, sur un appel correspondant :
+soit son origine (une personne, une automation, un script, un assistant
+vocal, une autre intégration). Pour chaque règle configurée, sur un appel
+correspondant :
 
 1. **Résout les entités ciblées** — à partir d'`entity_id`, `device_id`,
-   `area_id` et/ou `label_id` de l'appel, via les registres
-   entité/appareil (la même résolution que les automations d'origine
-   faisaient à la main, généralisée à n'importe quel domaine).
-2. **Vérifie une correspondance immédiate.** Si l'entité reflète déjà
+   `area_id` et/ou `label_id` de l'appel, via les registres entité et
+   appareil, puis ne garde que les entités qui passent aussi les filtres
+   de la règle (domaine, motifs, pièces, étiquettes, appareils).
+2. **Calcule ce qui est attendu** — l'état impliqué par le service, et les
+   attributs réellement transmis dans l'appel. Ce calcul est fait de façon
+   synchrone, dans le callback de l'événement : un `toggle` est donc jugé
+   par rapport à l'état tel qu'il était à l'instant de la commande. Voir
+   [Ce qui est comparé](#ce-qui-est-comparé).
+3. **Vérifie une correspondance immédiate.** Si l'entité reflète déjà
    l'état/les attributs demandés au moment même où l'événement se
    déclenche (commande sans effet, ou déjà appliquée instantanément par
    l'intégration cible), la règle se résout immédiatement — sans délai,
    sans notification.
-3. Sinon, selon le mode :
-   - **Mode instantané** (par défaut) : attend `check_delay` secondes,
-     puis compare l'état/les attributs de l'entité à ce qui a été
-     demandé, avec tolérance. En cas d'écart, la règle relance la
-     commande et retente jusqu'à `retries` fois, espacées de
-     `retry_delay` secondes.
-   - **Mode mouvement** (`wait_for_change`, utilisé pour les volets) :
-     au lieu de comparer un instantané, attend jusqu'à `change_timeout`
-     secondes que `change_attribute` commence réellement à changer. Si ce
-     n'est pas le cas, c'est l'échec — la relance et les retentatives
-     fonctionnent de la même façon.
-4. **En cas d'échec persistant**, si l'escalade est activée et que son
+4. Sinon, selon le mode :
+   - **Mode Délais** (par défaut) : attend `check_delay` secondes, puis
+     compare l'état/les attributs de l'entité à ce qui a été demandé, avec
+     tolérance. En cas d'écart, la règle relance la commande et retente
+     jusqu'à `retries` fois, espacées de `retry_delay` secondes. Au pire :
+     `check_delay + retries × retry_delay`.
+   - **Mode Mouvement** (`wait_for_change`, activé par défaut pour les
+     volets) : au lieu de comparer un instantané après un délai fixe,
+     attend jusqu'à `change_timeout` secondes que `change_attribute`
+     commence réellement à changer. Si ce n'est pas le cas, c'est
+     l'échec — la commande est réémise et l'attente repart, jusqu'à
+     `retries` fois. `retry_delay` n'est pas utilisé dans ce mode ; au
+     pire : `(retries + 1) × change_timeout`.
+5. **En cas d'échec persistant**, si l'escalade est activée et que son
    délai de recharge est écoulé : exécute l'action de secours configurée,
-   attend `escalation_replay_delay` secondes, puis rejoue une dernière
-   fois la commande d'origine.
-5. **Notifie** (notification persistante et/ou service `notify.*`) en
+   arme le délai de recharge, attend `escalation_replay_delay` secondes,
+   puis rejoue une dernière fois la commande d'origine.
+6. **Notifie** (notification persistante et/ou service `notify.*`) en
    précisant ce qui était attendu par rapport à ce qui a été observé.
 
-Chaque commande réémise par Action Control (relance, ou rejeu après
-escalade) porte un `Context` Home Assistant propre, mémorisé en interne.
+Chaque relance réémet la commande pour cette seule entité : les clés de
+ciblage d'origine (`entity_id`, `device_id`, `area_id`, `label_id`,
+`floor_id`) sont remplacées par l'`entity_id` concerné, le reste des
+données de service étant conservé tel quel.
+
+Une seule exécution à la fois par couple (règle, entité) : si la même
+entité reçoit une nouvelle commande alors qu'une vérification est encore
+en cours, la seconde attend la fin de la première au lieu d'entrer en
+concurrence avec elle. Plusieurs règles qui correspondent au même appel
+s'exécutent indépendamment.
+
+### Protection anti-boucle
+
+Chaque commande réémise par Action Control (relance, action d'escalade
+elle-même, ou rejeu après escalade) porte un `Context` Home Assistant
+propre, créé pour l'occasion et mémorisé en interne pendant 120 secondes.
 Le déclencheur reconnaît et ignore tout événement `call_service` portant
 un de ces contextes auto-émis *avant* tout traitement — c'est ce qui
-empêche une relance de se re-déclencher elle-même ou une autre règle,
-sans entité de garde ni configuration supplémentaire. Cette mémoire est
-volontairement limitée au processus en cours (un redémarrage de Home
-Assistant la vide) — il n'y a jamais rien de significatif à conserver
-d'un redémarrage à l'autre, puisqu'un redémarrage arrête de toute façon
-toute vérification en cours.
+empêche une relance de se re-déclencher elle-même ou une autre règle, sans
+entité de garde ni configuration supplémentaire.
+
+Cette mémoire est volontairement limitée au processus en cours (un
+redémarrage de Home Assistant la vide) — il n'y a jamais rien de
+significatif à conserver d'un redémarrage à l'autre, puisqu'un redémarrage
+arrête de toute façon toute vérification en cours.
+
+## Configurer les règles
+
+Toute la configuration se fait depuis le bouton **Configurer** de
+l'intégration (Paramètres → Appareils et services → Action Control). Le
+menu propose :
+
+| Entrée de menu | Rôle |
+|---|---|
+| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → vérification et relances → escalade et notifications. |
+| Modifier une règle | Le même assistant, prérempli avec la règle choisie. |
+| Supprimer une règle | Demande confirmation, puis supprime la règle et son capteur. |
+| Paramètres globaux | Interrupteur général et valeurs par défaut, voir [Paramètres globaux](#paramètres-globaux). |
+
+Une seule instance de l'intégration est nécessaire — une seconde tentative
+d'ajout est volontairement refusée. Enregistrer une modification recharge
+l'intégration pour que les capteurs suivent la liste des règles ; ce
+rechargement annule aussi les vérifications en cours et remet les capteurs
+de statut sur `idle`.
 
 ## Référence des champs de règle
 
@@ -66,45 +107,127 @@ toute vérification en cours.
 | Champ | Description |
 |---|---|
 | Nom | Libellé affiché sur le capteur de statut de la règle et dans les notifications. |
-| Domaines | Un ou plusieurs domaines surveillés par cette règle (ex. `light`, `switch`, `cover`). Obligatoire. |
-| Services | Services surveillés dans ces domaines (ex. `turn_on`). Les suggestions correspondent à l'union des services réellement enregistrés pour les domaines choisis. Laisser vide pour surveiller tous les services du domaine. |
-| Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. |
-| Motif de nom convivial | Motif glob optionnel comparé au nom de l'entité. |
+| Domaines | Un ou plusieurs domaines surveillés par cette règle (ex. `light`, `switch`, `cover`). Obligatoire. La liste propose les domaines réellement présents dans votre instance, traduits, et accepte aussi un domaine saisi à la main. |
+| Services | Services surveillés dans ces domaines (ex. `turn_on`). Les suggestions correspondent à tous les services des domaines choisis. Laisser vide pour surveiller tous les services de ces domaines. |
+| Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. Sensible à la casse. |
+| Motif de nom convivial | Motif glob optionnel comparé au nom de l'entité, sans tenir compte de la casse. |
 | Pièces / Étiquettes / Appareils | Filtres optionnels — une entité correspond si elle (ou son appareil) appartient à une des pièces/étiquettes/appareils sélectionnés. |
 
-Une règle sans aucun filtre motif/pièce/étiquette/appareil correspond à
-toutes les entités du/des domaine(s)/service(s) choisis — par exemple
-« surveiller toutes les lumières ».
+Les filtres se cumulent (ET logique) : une entité doit satisfaire tous
+ceux qui sont renseignés. Une règle sans aucun filtre
+motif/pièce/étiquette/appareil correspond à toutes les entités du/des
+domaine(s)/service(s) choisis — par exemple « surveiller toutes les
+lumières ».
 
 ### Vérification
 
-| Champ | Description | Par défaut |
+| Champ | Description | Par défaut (plage) |
 |---|---|---|
-| Délai avant la première vérification | Secondes d'attente après la commande avant la première comparaison (mode instantané uniquement). | 2 |
-| Attributs à vérifier | Attributs comparés en plus de l'état (ex. `brightness`, `rgb_color`). | aucun |
-| Tolérances | `attribut:valeur, attribut2:valeur2` — tolérance numérique par attribut. Les attributs de type liste (comme `rgb_color`) appliquent la tolérance par élément. | aucune (égalité stricte) |
-| Nombre de relances | Combien de fois relancer la commande si la vérification échoue. | 2 |
-| Délai entre les relances | Secondes entre chaque relance. | 2 |
-| Attendre un changement | Bascule en mode mouvement : attend que `change_attribute` change réellement plutôt que de comparer un instantané. | désactivé |
-| Attribut à surveiller | L'attribut surveillé par le mode mouvement (ex. `current_position`). | — |
-| Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. | 45 |
+| Délai avant la première vérification | Secondes d'attente après la commande avant la première comparaison (mode Délais uniquement). | 2 (0–120) |
+| Attributs à vérifier | Attributs comparés en plus de l'état (ex. `brightness`, `rgb_color`). Seuls ceux réellement présents dans l'appel de service sont comparés. | aucun |
+| Tolérances | `attribut:valeur, attribut2:valeur2` — tolérance numérique par attribut. Les attributs de type liste (comme `rgb_color`) appliquent la tolérance élément par élément. Les entrées illisibles sont ignorées. | aucune (égalité stricte) |
+| Nombre de relances | Combien de fois relancer la commande si la vérification échoue. | 2 (0–10) |
+| Délai entre les relances | Secondes entre chaque relance (mode Délais uniquement). | 2 (0–600) |
+| Attendre un changement | Bascule en mode Mouvement : attend que `change_attribute` change réellement plutôt que de comparer un instantané. | désactivé |
+| Attribut à surveiller | L'attribut surveillé par le mode Mouvement (ex. `current_position`). Indispensable à ce mode : laissé vide, la règle reste en mode Délais. | — |
+| Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. | 45 (1–600) |
 
-Les domaines `light`, `switch` et `cover` sont préremplis automatiquement
-avec des valeurs par défaut adaptées (light : brightness/rgb_color/
-color_temp_kelvin/xy_color avec tolérance ; switch : état seul ; cover :
-mode mouvement sur `current_position`). Tout autre domaine part d'une
-simple vérification d'état, à affiner avec les champs ci-dessus.
+Quand une règle vise exactement un des domaines `light`, `switch` ou
+`cover`, des valeurs par défaut adaptées sont préremplies
+automatiquement :
+
+| Domaine | Valeurs préremplies |
+|---|---|
+| `light` | Attributs `brightness`, `rgb_color`, `color_temp_kelvin`, `xy_color`, avec les tolérances `5`, `5`, `100`, `0.01`. |
+| `switch` | État seul, aucun attribut. |
+| `cover` | Mode Mouvement sur `current_position`, délai de 45 s. |
+
+Tout autre domaine — ou une règle visant plusieurs domaines à la fois —
+part d'une simple vérification d'état, à affiner avec les champs
+ci-dessus.
 
 ### Escalade et notifications
 
-| Champ | Description | Par défaut |
+| Champ | Description | Par défaut (plage) |
 |---|---|---|
 | Activer l'action d'escalade | Active l'étape d'action de secours après échec persistant. | désactivé |
-| Action d'escalade | N'importe quelle séquence d'actions Home Assistant (appel de service, script...) — utilise le même éditeur d'action que les automations. | — |
-| Délai minimum entre deux escalades | Délai de recharge en secondes avant qu'une même règle puisse escalader à nouveau. | 300 |
-| Délai avant de rejouer | Secondes d'attente après l'action d'escalade avant de rejouer la commande d'origine. | 90 |
-| Notification persistante | Crée une `persistent_notification` en cas d'échec final. | activé |
-| Service notify | Appelle également ce service `notify.*` en cas d'échec final. | — |
+| Action d'escalade | N'importe quelle séquence d'actions Home Assistant (appel de service, script...) — le même éditeur d'action que dans les automations. Une action en erreur est journalisée sans interrompre la vérification. | — |
+| Délai minimum entre deux escalades | Délai de recharge, en secondes, avant qu'une même règle puisse escalader à nouveau. Compté à partir de la fin de l'action, et commun à toutes les entités de la règle. | 300 (0–86400) |
+| Délai après l'escalade avant de rejouer la commande | Secondes d'attente après l'action d'escalade avant de rejouer la commande d'origine. | 90 (0–3600) |
+| Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
+| Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
+
+La notification d'échec part juste après le rejeu, sans nouvelle attente :
+elle décrit donc l'état observé à ce moment-là et signale qu'une action de
+secours a été déclenchée. Le rejeu lui-même n'est pas re-vérifié — s'il
+fonctionne, la mise à jour suivante du statut viendra de la prochaine
+commande sur cette entité.
+
+### Paramètres globaux
+
+| Champ | Description | Par défaut (plage) |
+|---|---|---|
+| Action Control activé | Interrupteur général. Désactivé, les événements `call_service` sont ignorés : aucune vérification, aucune relance, aucune notification. Les règles conservent leur configuration. | activé |
+| Nombre de relances par défaut pour les nouvelles règles | Enregistré, mais **pas encore appliqué** à la création d'une règle — voir [Limites connues](#limites-connues). | 2 (0–10) |
+| Délai par défaut entre les relances pour les nouvelles règles | Idem. | 2 (0–600) |
+
+## Ce qui est comparé
+
+**État attendu.** Il est déduit du service appelé :
+
+| Service | État attendu |
+|---|---|
+| `turn_on` | `on` |
+| `turn_off` | `off` |
+| `open_cover` | `open` |
+| `close_cover` | `closed` |
+| `lock` | `locked` |
+| `unlock` | `unlocked` |
+| `toggle` | l'inverse de l'état au moment de l'appel |
+| tout autre service | aucun — seuls les attributs sont comparés |
+
+**Attributs attendus.** Un attribut listé dans *Attributs à vérifier*
+n'est comparé que s'il était réellement présent dans l'appel de service :
+un `light.turn_on` sans `brightness` ne vérifie donc pas la luminosité,
+même si `brightness` figure dans la liste. Deux alias gèrent les clés de
+données de service dont le nom diffère de celui de l'attribut d'état :
+
+- `cover.set_cover_position` : `position` → `current_position`
+- `cover.set_cover_tilt_position` : `tilt_position` → `current_tilt_position`
+
+**Règles de comparaison.**
+
+- Nombres : correspondance si `|attendu − réel| ≤ tolérance` (tolérance
+  `0` si rien n'est configuré).
+- Listes/tuples (`rgb_color`, `xy_color`...) : comparés élément par
+  élément avec la même tolérance ; deux longueurs différentes ne
+  correspondent jamais.
+- Texte, booléens, tout le reste : égalité stricte.
+- Un attribut attendu à `None` est toujours considéré comme satisfait ;
+  une entité sans état du tout est toujours en écart.
+
+## Capteur de statut
+
+Chaque règle dispose d'un capteur de diagnostic portant son nom, regroupé
+sous un appareil de service unique *Action Control*. Son état est le
+dernier résultat connu :
+
+| État | Signification |
+|---|---|
+| `idle` | Aucune vérification n'a encore eu lieu (également l'état juste après un rechargement). |
+| `ok` | Dernière vérification réussie — immédiatement, ou après relance. |
+| `retrying` | Une vérification est en cours et la commande est en train d'être relancée. |
+| `escalated` | La vérification a échoué et l'action d'escalade a été exécutée. |
+| `failed` | La vérification a échoué (pas d'escalade, ou délai de recharge non écoulé). |
+
+Attributs : `entity_id`, `expected_state`, `expected_attributes`,
+`actual_state`, `actual_attributes`, `attempt`, `mismatches`,
+`last_checked` (UTC, ISO 8601).
+
+Le capteur reflète la **dernière** exécution de la règle. Quand une
+commande vise plusieurs entités, toutes sont surveillées, mais le capteur
+ne conserve que la dernière mise à jour — le journal de débogage donne le
+détail entité par entité.
 
 ## Exemples
 
@@ -113,26 +236,48 @@ simple vérification d'état, à affiner avec les champs ci-dessus.
 - Domaines : `light`
 - Services : `turn_on`, `turn_off`, `toggle` (ou vide pour tous)
 - Attributs à vérifier : `brightness`, `rgb_color` (préremplis par défaut)
-- Relances : 2, délai 2s
+- Relances : 2, délai 2 s
 
 Vérifie que la luminosité/couleur demandées ont bien été appliquées, avec
-tolérance, et relance en cas d'écart — généralise l'automation d'origine
-lumières/prises à n'importe quelle lumière.
+tolérance, et relance en cas d'écart.
 
 ### Surveillance de volets / redémarrage de passerelle (façon KLF200)
 
 - Domaines : `cover`
 - Motif d'entity_id : `cover.volet_*`
-- Attendre un changement : activé, attribut `current_position`, délai 45s
+- Attendre un changement : activé, attribut `current_position`, délai 45 s
 - Escalade : activée, action = `switch.turn_on` sur le switch de
-  redémarrage de votre passerelle, délai de recharge 300s, délai de
-  rejeu 90s
+  redémarrage de votre passerelle, délai de recharge 300 s, délai de rejeu
+  90 s
 
 Attend qu'un volet commence réellement à bouger ; si ce n'est pas le cas
 après les relances, active le switch de redémarrage de la passerelle,
-attend, puis rejoue la commande d'origine — généralise l'automation
-KLF200, le délai de recharge remplaçant entièrement l'ancien switch de
-garde externe.
+attend, puis rejoue la commande d'origine.
+
+### Position de volet exacte
+
+- Domaines : `cover`
+- Services : `set_cover_position`
+- Attendre un changement : **désactivé** (mode Délais)
+- Attributs à vérifier : `current_position`
+- Tolérances : `current_position:2`
+- Délai avant la première vérification : 30 s (le temps que le volet
+  finisse sa course)
+
+Vérifie qu'un volet a bien atteint la position demandée, à ±2 %. La clé
+`position` de l'appel de service est automatiquement rapprochée de
+l'attribut `current_position`.
+
+### Consigne de thermostat
+
+- Domaines : `climate`
+- Services : `set_temperature`
+- Attributs à vérifier : `temperature`
+- Tolérances : `temperature:0.2`
+- Délai avant la première vérification : 5 s
+
+Détecte les consignes silencieusement perdues par une liaison radio
+capricieuse.
 
 ## Journalisation de débogage
 
@@ -155,27 +300,39 @@ logger:
 Au niveau debug, vous verrez quelles règles un appel de service a
 déclenchées, quelles entités sont surveillées et avec quel état/attributs
 attendus, chaque tentative de vérification/relance avec ses écarts,
-l'escalade et le rejeu, ainsi que les notifications envoyées. L'échec
-final de vérification d'une règle est toujours journalisé au niveau
-**warning**, donc visible même sans debug activé.
+l'escalade et le rejeu, les appels auto-émis ignorés, ainsi que les
+notifications envoyées. L'échec final de vérification d'une règle est
+toujours journalisé au niveau **warning**, donc visible même sans debug
+activé.
 
-## FAQ
+### Quand une règle ne se déclenche jamais
 
-**La mémoire anti-boucle survit-elle à un redémarrage de Home Assistant ?**
-Non, et ce n'est pas un problème — c'est un registre en mémoire avec une
-courte durée de vie, et un redémarrage arrête de toute façon toute
-vérification en cours, donc il n'y a rien de significatif à protéger
-d'un redémarrage à l'autre.
+1. Vérifiez l'interrupteur général dans *Paramètres globaux*.
+2. Repérez la ligne de debug `call_service ...` et comparez son domaine à
+   ceux de votre règle : une règle ne réagit qu'aux appels dont le
+   **domaine** figure dans sa liste, et certains raccourcis appellent les
+   services sous leur propre domaine (`homeassistant.turn_on` est un appel
+   du domaine `homeassistant`).
+3. `... resolved to no entities` signifie que l'appel ne portait aucune
+   cible exploitable.
+4. L'absence de ligne `watching ...` pour votre entité signifie qu'un des
+   filtres de la règle (motif, pièce, étiquette, appareil) l'a écartée.
+5. `Ignoring self-issued call_service event` signifie que l'appel venait
+   d'Action Control lui-même — c'est la protection anti-boucle qui fait
+   son travail.
 
-**Si je choisis deux domaines, les services suggérés sont-ils combinés ?**
-Oui — l'étape « quels services » suggère l'union de tous les services
-réellement enregistrés pour les domaines choisis (ex. `light` + `switch`
-suggère `turn_on`/`turn_off`/`toggle` fusionnés, sans doublon). Vous
-pouvez toujours saisir un nom de service non suggéré.
+## Limites connues
 
-**Pourquoi je ne vois pas l'icône de l'intégration dans Home Assistant ?**
-L'icône est embarquée dans `custom_components/action_control/brand/` et
-servie automatiquement via l'[API Brands Proxy](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
-de Home Assistant, qui nécessite **Home Assistant 2026.3.0 ou plus
-récent**. Sur une version plus ancienne, l'icône ne s'affichera pas, mais
-l'intégration fonctionne de la même façon dans les deux cas.
+- **Les textes de notification sont uniquement en français.** Les messages
+  d'échec et l'attribut `mismatches` du capteur sont écrits en dur en
+  français, quelle que soit la langue de Home Assistant.
+- **Les valeurs globales de relance par défaut ne sont pas encore
+  appliquées.** Elles sont enregistrées, mais une nouvelle règle part
+  toujours de 2 relances / 2 s ; réglez les valeurs dans la règle
+  elle-même.
+- **Un seul capteur de statut par règle** : une commande visant plusieurs
+  entités à la fois ne laisse que le dernier résultat sur le capteur.
+- **Modifier une règle recharge l'intégration**, ce qui annule les
+  vérifications en cours et remet les capteurs sur `idle`.
+- **Le rejeu après escalade n'est pas vérifié** ; c'est la dernière action
+  de la séquence.

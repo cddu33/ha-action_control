@@ -94,7 +94,7 @@ Each rule defines:
   of your choice.
 
 See the [full documentation](docs/documentation.md) for a field-by-field
-reference, ready-to-use recipes, debug logging, and FAQ.
+reference, ready-to-use recipes, debug logging, and known limitations.
 
 ## Usage example
 
@@ -115,4 +115,5 @@ logger:
     custom_components.action_control: debug
 ```
 
-See the [documentation](docs/documentation.md) for more, including the FAQ.
+See the [documentation](docs/documentation.md) for more, including what to
+check when a rule never triggers.

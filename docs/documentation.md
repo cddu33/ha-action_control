@@ -2,58 +2,97 @@
 
 *[English](documentation.md) | [Français](documentation.fr.md)*
 
-This page is the detailed reference for **Action Control**. For a quick
-overview, features list, and installation steps, see the [main
-README](../README.md).
-
 ## Table of contents
 
 - [How it works](#how-it-works)
+- [Configuring rules](#configuring-rules)
 - [Rule reference](#rule-reference)
+- [What gets compared](#what-gets-compared)
+- [Status sensor](#status-sensor)
 - [Recipes](#recipes)
 - [Debug logging](#debug-logging)
-- [FAQ](#faq)
+- [Known limitations](#known-limitations)
 
 ## How it works
 
 Action Control listens to Home Assistant's internal `call_service` event —
 the event fired for *every* service call, regardless of what triggered it
-(a person, an automation, a script, another integration). For each rule
-you've configured, on a matching call it:
+(a person, an automation, a script, a voice assistant, another
+integration). For each rule you have configured, on a matching call it:
 
 1. **Resolves the target entities** — from `entity_id`, `device_id`,
-   `area_id`, and/or `label_id` on the call, using the entity/device
-   registries (the same resolution the original hand-written automations
-   did by hand, generalized to any domain).
-2. **Checks for an immediate match.** If the entity already reflects the
+   `area_id` and/or `label_id` on the call, using the entity and device
+   registries, then keeps only the entities that also pass the rule's own
+   filters (domain, patterns, areas, labels, devices).
+2. **Computes what to expect** — the state the service implies, plus the
+   attributes the call actually carried. This happens synchronously, in
+   the event callback itself, so a `toggle` is judged against the state as
+   it was the instant the command was issued. See [What gets
+   compared](#what-gets-compared).
+3. **Checks for an immediate match.** If the entity already reflects the
    requested state/attributes the instant the event fires (a no-op
-   command, or one the target integration already applied instantly), the
-   rule resolves immediately — no delay, no notification.
-3. Otherwise, either:
-   - **Snapshot mode** (the default): waits `check_delay` seconds, then
+   command, or one the target integration applied instantly), the rule
+   resolves immediately — no delay, no notification.
+4. Otherwise, depending on the mode:
+   - **Delay mode** (the default): waits `check_delay` seconds, then
      compares the entity's state/attributes against what was requested,
-     with tolerance. If it doesn't match, the rule re-issues the command
-     and retries up to `retries` times, `retry_delay` seconds apart.
-   - **Movement mode** (`wait_for_change`, used for covers): instead of
-     comparing a snapshot, waits up to `change_timeout` seconds for
-     `change_attribute` to actually start changing. If it doesn't, that's
-     the failure — reissuing the command and retrying works the same way.
-4. **On persistent failure**, if escalation is enabled and its cooldown
-   has elapsed: runs the configured recovery action, waits
-   `escalation_replay_delay` seconds, and replays the original command
-   once more.
-5. **Notifies** you (persistent notification and/or a `notify.*` service)
+     with tolerance. On a mismatch it re-issues the command and retries up
+     to `retries` times, `retry_delay` seconds apart. Worst case:
+     `check_delay + retries × retry_delay`.
+   - **Movement mode** (`wait_for_change`, the default for covers):
+     instead of comparing a snapshot after a fixed delay, waits up to
+     `change_timeout` seconds for `change_attribute` to actually start
+     changing. If it doesn't, that is the failure — the command is
+     re-issued and the wait starts over, up to `retries` times.
+     `retry_delay` is not used in this mode; worst case:
+     `(retries + 1) × change_timeout`.
+5. **On persistent failure**, if escalation is enabled and its cooldown
+   has elapsed: runs the configured recovery action, arms the cooldown,
+   waits `escalation_replay_delay` seconds, then replays the original
+   command once more.
+6. **Notifies** you (persistent notification and/or a `notify.*` service)
    with what was expected vs. what was actually observed.
 
-Every command Action Control re-issues (a retry, or the post-escalation
-replay) carries its own internally tracked Home Assistant `Context`. The
-event listener recognizes and ignores any `call_service` event carrying
-one of these self-issued contexts *before* any processing — this is what
-prevents a retry from re-triggering the same or another rule, with no
-guard entity or extra configuration needed. This memory is intentionally
-in-process only (a Home Assistant restart clears it) — there is never
-anything meaningful to carry across a restart, since a restart also stops
-any in-flight watchdog run.
+Each retry re-issues the command for that one entity: the original target
+keys (`entity_id`, `device_id`, `area_id`, `label_id`, `floor_id`) are
+replaced by that entity's id, and the rest of the service data is kept
+as-is.
+
+Only one run at a time per (rule, entity) pair: if the same entity is
+commanded again while a check is still in flight, the second run waits for
+the first one to finish instead of racing it. Several rules matching the
+same call each run independently.
+
+### Anti-loop protection
+
+Every command Action Control re-issues (a retry, the escalation action
+itself, or the post-escalation replay) carries its own freshly created
+Home Assistant `Context`, remembered internally for 120 seconds. The event
+listener recognizes and ignores any `call_service` event carrying one of
+these self-issued contexts *before* any processing — this is what prevents
+a retry from re-triggering the same or another rule, with no guard entity
+and no extra configuration.
+
+That memory is intentionally in-process only (a Home Assistant restart
+clears it). There is never anything meaningful to carry across a restart,
+since a restart also stops any in-flight watchdog run.
+
+## Configuring rules
+
+Everything is configured from the integration's **Configure** button
+(Settings → Devices & services → Action Control). The menu offers:
+
+| Menu entry | What it does |
+|---|---|
+| Add a rule | Wizard: what to watch → which services → verification & retries → escalation & notifications. |
+| Edit a rule | The same wizard, pre-filled with the selected rule. |
+| Delete a rule | Asks for confirmation, then removes the rule and its sensor. |
+| Global settings | Master switch and default values, see [Global settings](#global-settings). |
+
+Only one instance of the integration is needed — a second setup attempt is
+aborted on purpose. Saving any change reloads the integration so the
+sensors follow the rule list; that reload also cancels any check still in
+flight and resets the status sensors to `idle`.
 
 ## Rule reference
 
@@ -62,44 +101,120 @@ any in-flight watchdog run.
 | Field | Description |
 |---|---|
 | Name | Label shown on the rule's status sensor and in notifications. |
-| Domains | One or more domains this rule watches (e.g. `light`, `switch`, `cover`). Required. |
-| Services | Services within those domains to watch (e.g. `turn_on`). Suggested options are the union of every service actually registered across the chosen domains. Leave empty to watch every service in the domain. |
-| Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) an entity's ID must match. |
-| Friendly name pattern | Optional glob pattern matched against the entity's name. |
+| Domains | One or more domains this rule watches (e.g. `light`, `switch`, `cover`). Required. The picker lists the domains currently present in your instance, translated, and also accepts a domain typed by hand. |
+| Services | Services within those domains to watch (e.g. `turn_on`). Suggestions cover every service of the chosen domains. Leave empty to watch every service in those domains. |
+| Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) the `entity_id` must match. Case-sensitive. |
+| Friendly name pattern | Optional glob pattern matched against the entity's name, case-insensitively. |
 | Areas / Labels / Devices | Optional filters — an entity matches if it (or its device) belongs to one of the selected areas/labels/devices. |
 
-A rule with no pattern/area/label/device filter at all matches every
+Filters are combined with AND: an entity must satisfy every filter that is
+set. A rule with no pattern/area/label/device filter at all matches every
 entity in scope for its domain(s)/service(s) — e.g. "watch every light".
 
 ### Verification
 
-| Field | Description | Default |
+| Field | Description | Default (range) |
 |---|---|---|
-| Delay before first check | Seconds to wait after the command before the first comparison (snapshot mode only). | 2 |
-| Attributes to check | Attributes compared in addition to state (e.g. `brightness`, `rgb_color`). | none |
-| Tolerances | `attr:value, attr2:value2` — per-attribute numeric tolerance. List attributes (like `rgb_color`) apply the tolerance per element. | none (exact match) |
-| Number of retries | How many times to re-issue the command if verification fails. | 2 |
-| Delay between retries | Seconds between each retry. | 2 |
+| Delay before the first check | Seconds to wait after the command before the first comparison (delay mode only). | 2 (0–120) |
+| Attributes to check | Attributes compared in addition to the state (e.g. `brightness`, `rgb_color`). Only those actually present in the service call are compared. | none |
+| Tolerances | `attr:value, attr2:value2` — per-attribute numeric tolerance. List attributes (like `rgb_color`) apply the tolerance element by element. Entries that can't be parsed are ignored. | none (exact match) |
+| Number of retries | How many times to re-issue the command if verification fails. | 2 (0–10) |
+| Delay between retries | Seconds between each retry (delay mode only). | 2 (0–600) |
 | Wait for change | Switches to movement mode: waits for `change_attribute` to actually change instead of comparing a snapshot. | off |
-| Attribute to watch | The attribute movement mode watches (e.g. `current_position`). | — |
-| Change timeout | Seconds to wait for that attribute to change before considering it a failure. | 45 |
+| Attribute to watch | The attribute movement mode watches (e.g. `current_position`). Required for that mode: left empty, the rule stays in delay mode. | — |
+| Timeout waiting for the change | Seconds to wait for that attribute to change before considering it a failure. | 45 (1–600) |
 
-The `light`, `switch`, and `cover` domains get sensible defaults
-pre-filled automatically (light: brightness/rgb_color/color_temp_kelvin/
-xy_color with tolerance; switch: state-only; cover: movement mode on
-`current_position`). Any other domain starts from a plain state-only
-check that you can refine with the fields above.
+When a rule targets exactly one of the `light`, `switch` or `cover`
+domains, sensible defaults are pre-filled automatically:
+
+| Domain | Pre-filled defaults |
+|---|---|
+| `light` | Attributes `brightness`, `rgb_color`, `color_temp_kelvin`, `xy_color`, with tolerances `5`, `5`, `100`, `0.01`. |
+| `switch` | State only, no attribute. |
+| `cover` | Movement mode on `current_position`, 45 s timeout. |
+
+Any other domain — or a rule targeting several domains at once — starts
+from a plain state-only check that you can refine with the fields above.
 
 ### Escalation & notifications
 
-| Field | Description | Default |
+| Field | Description | Default (range) |
 |---|---|---|
 | Enable escalation action | Turns on the recovery-action step after persistent failure. | off |
-| Escalation action | Any Home Assistant action sequence (service call, script, ...) — uses the same action editor as automations. | — |
-| Minimum time between escalations | Cooldown in seconds before the same rule is allowed to escalate again. | 300 |
-| Delay before replaying | Seconds to wait after the escalation action before replaying the original command. | 90 |
-| Persistent notification | Creates a `persistent_notification` on final failure. | on |
-| Notify service | Also calls this `notify.*` service on final failure. | — |
+| Escalation action | Any Home Assistant action sequence (service call, script, ...) — the same action editor as in automations. An action that fails is logged and does not break the run. | — |
+| Minimum time between two escalations | Cooldown before the same rule may escalate again, in seconds. Counted from the moment the action has run, and shared by every entity of the rule. | 300 (0–86400) |
+| Delay after escalation before replaying the command | Seconds to wait after the escalation action before replaying the original command. | 90 (0–3600) |
+| Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
+| Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
+
+The failure notification is sent right after the replay, without waiting
+again: it describes the state observed at that moment, and mentions that a
+recovery action was triggered. The replay itself is not re-verified — if it
+works, the next status update comes from the next command on that entity.
+
+### Global settings
+
+| Field | Description | Default (range) |
+|---|---|---|
+| Action Control enabled | Master switch. When off, `call_service` events are ignored: no check, no retry, no notification. Rules keep their configuration. | on |
+| Default number of retries for new rules | Stored, but **not applied yet** when creating a rule — see [Known limitations](#known-limitations). | 2 (0–10) |
+| Default delay between retries for new rules | Same. | 2 (0–600) |
+
+## What gets compared
+
+**Expected state.** It is derived from the service being called:
+
+| Service | Expected state |
+|---|---|
+| `turn_on` | `on` |
+| `turn_off` | `off` |
+| `open_cover` | `open` |
+| `close_cover` | `closed` |
+| `lock` | `locked` |
+| `unlock` | `unlocked` |
+| `toggle` | the opposite of the state at the moment of the call |
+| any other service | none — only the attributes are compared |
+
+**Expected attributes.** An attribute listed in *Attributes to check* is
+only compared if the service call actually carried it: `light.turn_on`
+without `brightness` does not check the brightness, even when `brightness`
+is in the list. Two aliases handle service-data keys that differ from the
+state attribute name:
+
+- `cover.set_cover_position`: `position` → `current_position`
+- `cover.set_cover_tilt_position`: `tilt_position` → `current_tilt_position`
+
+**Comparison rules.**
+
+- Numbers: match when `|expected − actual| ≤ tolerance` (tolerance `0`
+  unless configured).
+- Lists/tuples (`rgb_color`, `xy_color`, ...): compared element by element
+  with the same tolerance; different lengths never match.
+- Text, booleans, anything else: exact match.
+- An attribute expected to be `None` always counts as satisfied; an entity
+  with no state at all is always a mismatch.
+
+## Status sensor
+
+Each rule gets one diagnostic sensor named after the rule, grouped under a
+single *Action Control* service device. Its state is the last known
+outcome:
+
+| State | Meaning |
+|---|---|
+| `idle` | No check has run yet (also the state right after a reload). |
+| `ok` | Last check succeeded — immediately, or after a retry. |
+| `retrying` | A check is in progress and the command is being re-issued. |
+| `escalated` | Verification failed and the escalation action was run. |
+| `failed` | Verification failed (no escalation, or still in cooldown). |
+
+Attributes: `entity_id`, `expected_state`, `expected_attributes`,
+`actual_state`, `actual_attributes`, `attempt`, `mismatches`,
+`last_checked` (UTC, ISO 8601).
+
+The sensor reflects the rule's **latest** run. When one command targets
+several entities, they are all watched, but the sensor keeps the last
+update only — the debug log holds the full per-entity picture.
 
 ## Recipes
 
@@ -108,24 +223,45 @@ check that you can refine with the fields above.
 - Domains: `light`
 - Services: `turn_on`, `turn_off`, `toggle` (or leave empty for all)
 - Attributes to check: `brightness`, `rgb_color` (pre-filled by default)
-- Retries: 2, delay 2s
+- Retries: 2, delay 2 s
 
-Verifies brightness/color were actually applied after a command, with
-tolerance, and retries on mismatch — generalizes the original
-lights/switches watchdog automation to any light.
+Verifies that the requested brightness/color were actually applied, with
+tolerance, and retries on mismatch.
 
 ### Cover / gateway-restart watchdog (KLF200-style)
 
 - Domains: `cover`
 - Entity ID pattern: `cover.volet_*`
-- Wait for change: on, attribute `current_position`, timeout 45s
+- Wait for change: on, attribute `current_position`, timeout 45 s
 - Escalation: enabled, action = `switch.turn_on` on your gateway's restart
-  switch, cooldown 300s, replay delay 90s
+  switch, cooldown 300 s, replay delay 90 s
 
-Waits for a cover to actually start moving; if it doesn't after retries,
-turns on the gateway's restart switch, waits, then replays the original
-command — generalizes the KLF200 gateway-restart automation, with the
-cooldown replacing the old external guard-switch entirely.
+Waits for a cover to actually start moving; if it doesn't after the
+retries, turns on the gateway's restart switch, waits, then replays the
+original command.
+
+### Exact cover position
+
+- Domains: `cover`
+- Services: `set_cover_position`
+- Wait for change: **off** (delay mode)
+- Attributes to check: `current_position`
+- Tolerances: `current_position:2`
+- Delay before the first check: 30 s (long enough for the cover to travel)
+
+Verifies that a cover reached the position that was requested, ±2 %. The
+`position` key of the service call is matched against the
+`current_position` attribute automatically.
+
+### Thermostat setpoint
+
+- Domains: `climate`
+- Services: `set_temperature`
+- Attributes to check: `temperature`
+- Tolerances: `temperature:0.2`
+- Delay before the first check: 5 s
+
+Catches setpoints silently dropped by a flaky radio link.
 
 ## Debug logging
 
@@ -136,8 +272,8 @@ Nothing needs a restart to try this: Developer tools → Actions → call
 custom_components.action_control: debug
 ```
 
-For a persistent setting, add to `configuration.yaml` and fully restart
-Home Assistant:
+For a persistent setting, add this to `configuration.yaml` and fully
+restart Home Assistant:
 
 ```yaml
 logger:
@@ -147,26 +283,36 @@ logger:
 
 At debug level you'll see which rules a service call matched, which
 entities got watched and with what expected state/attributes, each
-check/retry attempt with its mismatches, escalation and replay, and
-outgoing notifications. A rule's final failed verification is always
-logged at **warning** level, so it's visible even without debug logging.
+check/retry attempt with its mismatches, escalation and replay, ignored
+self-issued calls, and outgoing notifications. A rule's final failed
+verification is always logged at **warning** level, so it's visible even
+without debug logging.
 
-## FAQ
+### When a rule never triggers
 
-**Does the anti-loop memory survive a Home Assistant restart?**
-No, and it doesn't need to — it's an in-process registry with a short TTL,
-and a restart already stops every in-flight watchdog run, so there's
-nothing meaningful left to protect across a restart.
+1. Check the master switch in *Global settings*.
+2. Find the `call_service ...` debug line and compare the domain in it
+   with your rule's domains: a rule only reacts to calls whose **domain**
+   is in its list, and some helpers call services under their own domain
+   (`homeassistant.turn_on` is a call in the `homeassistant` domain).
+3. `... resolved to no entities` means the call carried no resolvable
+   target.
+4. No `watching ...` line for your entity means one of the rule's filters
+   (pattern, area, label, device) rejected it.
+5. `Ignoring self-issued call_service event` means the call came from
+   Action Control itself — that's the anti-loop protection doing its job.
 
-**If I pick two domains, are the suggested services combined?**
-Yes — the "which services" step suggests the union of every service
-actually registered across all chosen domains (e.g. `light` + `switch`
-suggests `turn_on`/`turn_off`/`toggle` merged, deduplicated). You can
-still type a service name that isn't suggested.
+## Known limitations
 
-**Why don't I see the integration's icon in Home Assistant?**
-The icon ships in `custom_components/action_control/brand/` and is served
-automatically via Home Assistant's [Brands Proxy
-API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api),
-which requires **Home Assistant 2026.3.0 or later**. On older versions
-the icon won't show, but the integration works the same either way.
+- **Notification texts are French only.** Failure messages and the
+  `mismatches` sensor attribute are hard-coded in French, whatever the
+  Home Assistant language.
+- **The global default retries/delay are not applied yet.** They're saved,
+  but a new rule still starts from 2 retries / 2 s; set the values on the
+  rule itself.
+- **One status sensor per rule**, so a command targeting many entities at
+  once only leaves the last outcome on the sensor.
+- **Editing rules reloads the integration**, which cancels in-flight
+  checks and resets the sensors to `idle`.
+- **The post-escalation replay is not verified**; it is the last action of
+  the run.

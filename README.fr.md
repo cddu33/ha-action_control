@@ -63,7 +63,7 @@ Chaque règle définit :
 
 Voir la [documentation complète](docs/documentation.fr.md) pour la
 référence détaillée de chaque champ, des exemples prêts à l'emploi, la
-journalisation de débogage et la FAQ.
+journalisation de débogage et les limites connues.
 
 ## Exemple d'usage
 
@@ -85,4 +85,4 @@ logger:
 ```
 
 Voir la [documentation](docs/documentation.fr.md) pour plus de détails,
-notamment la FAQ.
+notamment la marche à suivre quand une règle ne se déclenche pas.
