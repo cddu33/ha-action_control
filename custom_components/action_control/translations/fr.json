@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Action Control",
-        "description": "Configurer Action Control. Vous définirez les règles de surveillance ensuite, depuis le bouton Configurer de l'intégration."
+        "description": "Installation d'Action Control. Les règles de surveillance se configurent ensuite, depuis le bouton Configurer de l'intégration."
       }
     },
     "abort": {
@@ -23,11 +23,10 @@
       },
       "add_rule": {
         "title": "Règle – ce qu'il faut surveiller",
-        "description": "Choisissez les appels de service surveillés par cette règle, et les entités concernées.",
+        "description": "Choisissez le(s) domaine(s) surveillé(s) par cette règle, et les entités concernées. L'étape suivante permet de choisir les services à surveiller dans ces domaines.",
         "data": {
           "name": "Nom",
-          "domains": "Domaines (ex. light, switch, cover)",
-          "services": "Services (vide = tous les services du domaine)",
+          "domains": "Domaines",
           "entity_id_pattern": "Motif d'entity_id (glob, ex. cover.volet_*)",
           "name_pattern": "Motif de nom convivial (glob)",
           "area_ids": "Pièces",
@@ -35,9 +34,16 @@
           "device_ids": "Appareils"
         }
       },
+      "add_rule_services": {
+        "title": "Règle – quels services",
+        "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
+        "data": {
+          "services": "Services (vide = tous les services du domaine)"
+        }
+      },
       "rule_verify": {
         "title": "Règle – vérification et relances",
-        "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées. Les domaines courants (light, switch, cover) sont préremplis avec des valeurs par défaut adaptées.",
+        "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées. Quel que soit le domaine choisi, des valeurs par défaut adaptées sont préremplies pour light, switch et cover ; tout autre domaine part d'une simple vérification d'état, à affiner ici.",
         "data": {
           "check_delay": "Délai avant la première vérification (secondes)",
           "attributes_to_check": "Attributs à vérifier (en plus de l'état)",
