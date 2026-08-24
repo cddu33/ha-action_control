@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Action Control",
+        "description": "Set up Action Control. You will define watchdog rules afterwards, from the integration's Configure button."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Action Control is already configured; only one instance is needed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Action Control",
+        "menu_options": {
+          "add_rule": "Add a rule",
+          "edit_rule_select": "Edit a rule",
+          "delete_rule_select": "Delete a rule",
+          "global_settings": "Global settings"
+        }
+      },
+      "add_rule": {
+        "title": "Rule – what to watch",
+        "description": "Choose which service calls this rule watches, and which entities it applies to.",
+        "data": {
+          "name": "Name",
+          "domains": "Domains (e.g. light, switch, cover)",
+          "services": "Services (empty = any service in the domain)",
+          "entity_id_pattern": "Entity ID pattern (glob, e.g. cover.volet_*)",
+          "name_pattern": "Friendly name pattern (glob)",
+          "area_ids": "Areas",
+          "label_ids": "Labels",
+          "device_ids": "Devices"
+        }
+      },
+      "rule_verify": {
+        "title": "Rule – verification & retries",
+        "description": "Define how the outcome is checked and how retries are handled. Common domains (light, switch, cover) are pre-filled with sensible defaults.",
+        "data": {
+          "check_delay": "Delay before the first check (seconds)",
+          "attributes_to_check": "Attributes to check (in addition to state)",
+          "tolerances": "Tolerances, as attr:value, attr2:value2",
+          "retries": "Number of retries",
+          "retry_delay": "Delay between retries (seconds)",
+          "wait_for_change": "Wait for an attribute to actually start changing (e.g. covers) instead of a snapshot check",
+          "change_attribute": "Attribute to watch for a change (e.g. current_position)",
+          "change_timeout": "Timeout waiting for the change (seconds)"
+        }
+      },
+      "rule_escalation": {
+        "title": "Rule – escalation & notifications",
+        "description": "Optionally define a recovery action (e.g. turning on a switch, or running a script) to run when verification keeps failing, and how you want to be notified.",
+        "data": {
+          "escalation_enabled": "Enable escalation action",
+          "escalation_action": "Escalation action",
+          "escalation_cooldown": "Minimum time between two escalations (seconds)",
+          "escalation_replay_delay": "Delay after escalation before replaying the command (seconds)",
+          "notify_persistent": "Notify via a persistent notification",
+          "notify_service": "Also notify via this notify service"
+        }
+      },
+      "edit_rule_select": {
+        "title": "Edit a rule",
+        "data": {
+          "rule_id": "Rule"
+        }
+      },
+      "delete_rule_select": {
+        "title": "Delete a rule",
+        "data": {
+          "rule_id": "Rule"
+        }
+      },
+      "delete_rule_confirm": {
+        "title": "Confirm deletion",
+        "description": "Delete rule \"{rule_name}\"? This cannot be undone.",
+        "data": {
+          "confirm": "Confirm deletion"
+        }
+      },
+      "global_settings": {
+        "title": "Global settings",
+        "data": {
+          "enabled": "Action Control enabled",
+          "default_retries": "Default number of retries for new rules",
+          "default_retry_delay": "Default delay between retries for new rules (seconds)"
+        }
+      }
+    },
+    "abort": {
+      "no_rules": "No rule has been configured yet."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "rule_status": {
+        "name": "{rule_name}"
+      }
+    }
+  }
+}
