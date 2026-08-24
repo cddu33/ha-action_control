@@ -57,14 +57,6 @@ Chaque règle définit :
   qu'un volet commence réellement à bouger ; si ce n'est pas le cas, elle
   active un switch de redémarrage de passerelle puis rejoue la commande.
 
-## Anti-boucle
-
-Aucune configuration n'est nécessaire pour éviter qu'une commande rejouée
-par l'intégration ne se re-déclenche elle-même : chaque appel de service
-émis par Action Control (relance, rejeu après escalade) porte un `Context`
-propre, mémorisé en interne, et le déclencheur ignore tout événement
-`call_service` portant ce contexte avant tout traitement.
-
 ## Dépannage
 
 Activer les journaux de débogage :

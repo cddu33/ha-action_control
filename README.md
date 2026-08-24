@@ -90,14 +90,6 @@ Each rule defines:
   a cover to actually start moving; if it doesn't, it turns on a gateway
   restart switch and then replays the command.
 
-## Anti-loop
-
-No configuration is needed to prevent a command replayed by the
-integration from re-triggering itself: every service call issued by
-Action Control (a retry, or a replay after escalation) carries its own
-`Context`, tracked internally, and the listener ignores any `call_service`
-event carrying that context before any processing happens.
-
 ## Troubleshooting
 
 Enable debug logging:
