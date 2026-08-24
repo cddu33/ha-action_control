@@ -61,6 +61,10 @@ Chaque règle définit :
 - **Notifications** : notification persistante et/ou service `notify.*` de
   votre choix.
 
+Voir la [documentation complète](docs/documentation.fr.md) pour la
+référence détaillée de chaque champ, des exemples prêts à l'emploi, la
+journalisation de débogage et la FAQ.
+
 ## Exemple d'usage
 
 - Une règle sur le domaine `light` vérifie que la luminosité et la couleur
@@ -79,3 +83,6 @@ logger:
   logs:
     custom_components.action_control: debug
 ```
+
+Voir la [documentation](docs/documentation.fr.md) pour plus de détails,
+notamment la FAQ.
