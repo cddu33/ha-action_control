@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Action Control",
-        "description": "Configurer Action Control. Vous définirez les règles de surveillance ensuite, depuis le bouton Configurer de l'intégration."
+        "description": "Installation d'Action Control. Les règles de surveillance se configurent ensuite, depuis le bouton Configurer de l'intégration."
       }
     },
     "abort": {
