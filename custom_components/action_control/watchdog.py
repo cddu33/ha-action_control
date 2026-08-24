@@ -152,8 +152,19 @@ async def async_run_watchdog(
             expected_state, expected_attributes, rule.tolerances, hass.states.get(entity_id)
         )
         if result.ok:
+            _LOGGER.debug(
+                "Rule '%s': %s already matches the expected state/attributes, nothing to do",
+                rule.name,
+                entity_id,
+            )
             _publish(engine, rule.rule_id, status, RuleStatus.OK, hass.states.get(entity_id))
             return
+        _LOGGER.debug(
+            "Rule '%s': %s not yet satisfied (mismatches: %s)",
+            rule.name,
+            entity_id,
+            [(m.attribute, m.expected, m.actual) for m in result.mismatches],
+        )
 
         moved = True
         no_movement_mismatch = None
@@ -163,12 +174,30 @@ async def async_run_watchdog(
             if state is not None:
                 baseline = state.attributes.get(rule.change_attribute)
             attempt = 0
+            _LOGGER.debug(
+                "Rule '%s': waiting up to %ss for %s.%s on %s to change (baseline=%r)",
+                rule.name,
+                rule.change_timeout,
+                domain,
+                service,
+                entity_id,
+                baseline,
+            )
             moved = await _wait_for_attribute_change(
                 hass, entity_id, rule.change_attribute, baseline, rule.change_timeout
             )
             while not moved and attempt < rule.retries:
                 attempt += 1
                 status.attempt = attempt
+                _LOGGER.debug(
+                    "Rule '%s': no movement on %s, retry %s/%s (reissuing %s.%s)",
+                    rule.name,
+                    entity_id,
+                    attempt,
+                    rule.retries,
+                    domain,
+                    service,
+                )
                 _publish(engine, rule.rule_id, status, RuleStatus.RETRYING, hass.states.get(entity_id))
                 await _reissue_command(engine, domain, service, entity_id, service_data)
                 moved = await _wait_for_attribute_change(
@@ -176,6 +205,7 @@ async def async_run_watchdog(
                 )
             final_state = hass.states.get(entity_id)
             if moved:
+                _LOGGER.debug("Rule '%s': %s started moving, verified OK", rule.name, entity_id)
                 _publish(engine, rule.rule_id, status, RuleStatus.OK, final_state)
                 return
             # No movement detected: this is the failure, independent of
@@ -196,6 +226,18 @@ async def async_run_watchdog(
             while not result.ok and attempt < rule.retries:
                 attempt += 1
                 status.attempt = attempt
+                _LOGGER.debug(
+                    "Rule '%s': %s still not satisfied after %ss (mismatches: %s), "
+                    "retry %s/%s (reissuing %s.%s)",
+                    rule.name,
+                    entity_id,
+                    rule.check_delay,
+                    [(m.attribute, m.expected, m.actual) for m in result.mismatches],
+                    attempt,
+                    rule.retries,
+                    domain,
+                    service,
+                )
                 _publish(engine, rule.rule_id, status, RuleStatus.RETRYING, final_state)
                 await _reissue_command(engine, domain, service, entity_id, service_data)
                 await asyncio.sleep(rule.retry_delay)
@@ -204,6 +246,7 @@ async def async_run_watchdog(
                     expected_state, expected_attributes, rule.tolerances, final_state
                 )
             if result.ok:
+                _LOGGER.debug("Rule '%s': %s verified OK after retry", rule.name, entity_id)
                 _publish(engine, rule.rule_id, status, RuleStatus.OK, final_state)
                 return
 
@@ -211,10 +254,24 @@ async def async_run_watchdog(
         escalated = False
         if rule.escalation_enabled and engine.escalation_ready(rule.rule_id):
             escalated = True
+            _LOGGER.debug(
+                "Rule '%s': retries exhausted for %s, running escalation action", rule.name, entity_id
+            )
             await _run_escalation(engine, hass, rule)
             engine.arm_escalation_cooldown(rule.rule_id, rule.escalation_cooldown)
             await asyncio.sleep(rule.escalation_replay_delay)
+            _LOGGER.debug(
+                "Rule '%s': replaying %s.%s on %s after escalation",
+                rule.name,
+                domain,
+                service,
+                entity_id,
+            )
             await _reissue_command(engine, domain, service, entity_id, service_data)
+        elif rule.escalation_enabled:
+            _LOGGER.debug(
+                "Rule '%s': retries exhausted for %s, escalation still in cooldown", rule.name, entity_id
+            )
 
         final_state = hass.states.get(entity_id)
         result = comparator.compare(
@@ -230,10 +287,18 @@ async def async_run_watchdog(
             for m in result.mismatches
         ]
         rule_status = RuleStatus.ESCALATED if escalated else RuleStatus.FAILED
+        _LOGGER.warning(
+            "Rule '%s': %s failed verification (status=%s, mismatches: %s)",
+            rule.name,
+            entity_id,
+            rule_status.value,
+            status.mismatches,
+        )
         _publish(engine, rule.rule_id, status, rule_status, final_state)
 
         if rule.notify_persistent or rule.notify_service:
             message = _format_message(entity_id, expected_state, result, escalated)
+            _LOGGER.debug("Rule '%s': sending failure notification for %s", rule.name, entity_id)
             await _notify(engine, rule, entity_id, message)
 
 
