@@ -70,8 +70,8 @@ restart.
 The integration ships its own icon under `custom_components/action_control/brand/`.
 Home Assistant 2026.3.0+ serves it automatically through the local
 [Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
-(no configuration needed). On older versions of Home Assistant, the icon
-simply won't show up — the integration itself works the same either way.
+(no configuration needed). That is also the minimum version HACS enforces
+for this integration (`hacs.json`).
 
 ## Configuration
 

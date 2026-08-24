@@ -71,9 +71,8 @@ Copier le dossier `custom_components/action_control` dans le répertoire
 L'intégration embarque sa propre icône sous `custom_components/action_control/brand/`.
 Home Assistant 2026.3.0+ la sert automatiquement via l'API proxy locale
 [Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
-(aucune configuration nécessaire). Sur une version plus ancienne de Home
-Assistant, l'icône ne s'affichera simplement pas — l'intégration fonctionne
-de la même façon dans les deux cas.
+(aucune configuration nécessaire). C'est aussi la version minimale exigée
+par HACS pour cette intégration (`hacs.json`).
 
 ## Configuration
 

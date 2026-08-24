@@ -7,6 +7,5 @@
   "issue_tracker": "https://github.com/cddu33/ha-action_control/issues",
   "iot_class": "calculated",
   "requirements": [],
-  "homeassistant": "2026.3.0",
   "version": "0.2.0"
 }
