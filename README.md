@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
+  <img src="https://raw.githubusercontent.com/cddu33/ha-action_control/main/custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
 </p>
 
 # Action Control
 
-*English | [Français](README.fr.md)*
+*English | [Français](https://github.com/cddu33/ha-action_control/blob/main/README.fr.md)*
 
 A generic, fully UI-configurable watchdog for Home Assistant: verify that
 your commands (`light.turn_on`, `switch.turn_off`,
@@ -93,7 +93,7 @@ Each rule defines:
 - **Notifications**: persistent notification and/or a `notify.*` service
   of your choice.
 
-See the [full documentation](docs/documentation.md) for a field-by-field
+See the [full documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md) for a field-by-field
 reference, ready-to-use recipes, debug logging, and known limitations.
 
 ## Usage example
@@ -115,5 +115,5 @@ logger:
     custom_components.action_control: debug
 ```
 
-See the [documentation](docs/documentation.md) for more, including what to
+See the [documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md) for more, including what to
 check when a rule never triggers.

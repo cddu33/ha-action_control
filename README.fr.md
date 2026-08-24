@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
+  <img src="https://raw.githubusercontent.com/cddu33/ha-action_control/main/custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
 </p>
 
 # Action Control
 
-*[English](README.md) | Français*
+*[English](https://github.com/cddu33/ha-action_control/blob/main/README.md) | Français*
 
 Contrôle générique, configurable via l'interface Home Assistant, de la bonne
 exécution de vos commandes (`light.turn_on`, `switch.turn_off`,
@@ -95,7 +95,7 @@ Chaque règle définit :
 - **Notifications** : notification persistante et/ou service `notify.*` de
   votre choix.
 
-Voir la [documentation complète](docs/documentation.fr.md) pour la
+Voir la [documentation complète](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.fr.md) pour la
 référence détaillée de chaque champ, des exemples prêts à l'emploi, la
 journalisation de débogage et les limites connues.
 
@@ -118,5 +118,5 @@ logger:
     custom_components.action_control: debug
 ```
 
-Voir la [documentation](docs/documentation.fr.md) pour plus de détails,
+Voir la [documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.fr.md) pour plus de détails,
 notamment la marche à suivre quand une règle ne se déclenche pas.
