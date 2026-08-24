@@ -49,6 +49,9 @@ async def test_add_edit_delete_rule_cycle(hass):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"name": "Test rule", "domains": ["switch"]}
     )
+    assert result["step_id"] == "add_rule_services"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["step_id"] == "rule_verify"
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
@@ -75,6 +78,7 @@ async def test_add_edit_delete_rule_cycle(hass):
     )
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] == FlowResultType.CREATE_ENTRY
 
     rules = entry.options[OPT_RULES]
@@ -93,6 +97,21 @@ async def test_add_edit_delete_rule_cycle(hass):
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[OPT_RULES] == {}
+
+
+async def test_services_step_offers_the_chosen_domains_registered_services(hass):
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    hass.services.async_register("light", "turn_off", lambda call: None)
+
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Lights", "domains": ["light"]}
+    )
+    assert result["step_id"] == "add_rule_services"
+
+    options = result["data_schema"].schema["services"].config["options"]
+    assert set(options) == {"turn_on", "turn_off"}
 
 
 async def test_global_settings(hass):

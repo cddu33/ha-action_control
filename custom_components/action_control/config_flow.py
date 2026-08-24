@@ -7,6 +7,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import translation
 from homeassistant.helpers.selector import (
     ActionSelector,
     AreaSelector,
@@ -228,7 +229,6 @@ class ActionControlOptionsFlow(OptionsFlow):
                 {
                     c.CONF_NAME: user_input[c.CONF_NAME],
                     c.CONF_DOMAINS: user_input[c.CONF_DOMAINS],
-                    c.CONF_SERVICES: user_input.get(c.CONF_SERVICES, []),
                     c.CONF_ENTITY_ID_PATTERN: user_input.get(c.CONF_ENTITY_ID_PATTERN) or None,
                     c.CONF_NAME_PATTERN: user_input.get(c.CONF_NAME_PATTERN) or None,
                     c.CONF_AREA_IDS: user_input.get(c.CONF_AREA_IDS, []),
@@ -236,11 +236,22 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_DEVICE_IDS: user_input.get(c.CONF_DEVICE_IDS, []),
                 }
             )
-            return await self.async_step_rule_verify()
+            return await self.async_step_add_rule_services()
 
-        domains = sorted(
+        known_domains = sorted(
             {entity_id.split(".", 1)[0] for entity_id in self.hass.states.async_entity_ids()}
         )
+        # Show each domain under its name translated to the system's
+        # configured language (e.g. "Lumière" instead of "light") when
+        # Home Assistant has that translation, falling back to the raw
+        # domain id for anything unknown/custom.
+        titles = await translation.async_get_translations(
+            self.hass, self.hass.config.language, "title", integrations=known_domains
+        )
+        domain_options = [
+            SelectOptionDict(value=domain, label=titles.get(f"component.{domain}.title", domain))
+            for domain in known_domains
+        ]
         schema = vol.Schema(
             {
                 vol.Required(c.CONF_NAME, default=self._draft.get(c.CONF_NAME, "")): str,
@@ -248,16 +259,11 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_DOMAINS, default=self._draft.get(c.CONF_DOMAINS, [])
                 ): SelectSelector(
                     SelectSelectorConfig(
-                        options=domains,
+                        options=domain_options,
                         multiple=True,
                         custom_value=True,
                         mode=SelectSelectorMode.DROPDOWN,
                     )
-                ),
-                vol.Optional(
-                    c.CONF_SERVICES, default=self._draft.get(c.CONF_SERVICES, [])
-                ): SelectSelector(
-                    SelectSelectorConfig(options=[], multiple=True, custom_value=True)
                 ),
                 vol.Optional(
                     c.CONF_ENTITY_ID_PATTERN,
@@ -278,6 +284,44 @@ class ActionControlOptionsFlow(OptionsFlow):
             }
         )
         return self.async_show_form(step_id="add_rule", data_schema=schema)
+
+    # ---- add / edit: page 1b - which services, now that domains are known ----
+
+    async def async_step_add_rule_services(
+        self, user_input: dict[str, Any] | None = None
+    ) -> Any:
+        if user_input is not None:
+            self._draft[c.CONF_SERVICES] = user_input.get(c.CONF_SERVICES, [])
+            return await self.async_step_rule_verify()
+
+        # Populated from the services Home Assistant actually registers for
+        # the domain(s) just chosen (union across domains), so the picker
+        # always offers real, existing services instead of an empty list --
+        # custom_value still allows typing one that isn't registered yet.
+        domains = self._draft.get(c.CONF_DOMAINS, [])
+        available_services: set[str] = set()
+        for domain in domains:
+            available_services.update(self.hass.services.async_services().get(domain, {}))
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    c.CONF_SERVICES, default=self._draft.get(c.CONF_SERVICES, [])
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=sorted(available_services),
+                        multiple=True,
+                        custom_value=True,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="add_rule_services",
+            data_schema=schema,
+            description_placeholders={"domains": ", ".join(domains)},
+        )
 
     # ---- add / edit: page 2 - verification ----
 
