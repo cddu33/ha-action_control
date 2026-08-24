@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/logo.png" alt="Action Control" width="256">
+  <img src="custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
 </p>
 
 # Action Control
@@ -64,6 +64,14 @@ mechanism based on Home Assistant's `Context`.
 Copy the `custom_components/action_control` folder into the
 `custom_components` directory of your Home Assistant configuration, then
 restart.
+
+### About the icon
+
+The integration ships its own icon under `custom_components/action_control/brand/`.
+Home Assistant 2026.3.0+ serves it automatically through the local
+[Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
+(no configuration needed). On older versions of Home Assistant, the icon
+simply won't show up — the integration itself works the same either way.
 
 ## Configuration
 
