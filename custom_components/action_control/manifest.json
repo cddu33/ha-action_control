@@ -3,10 +3,10 @@
   "name": "Action Control",
   "codeowners": ["@cddu33"],
   "config_flow": true,
-  "documentation": "https://github.com/cddu33/ha-action_control",
+  "documentation": "https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md",
   "issue_tracker": "https://github.com/cddu33/ha-action_control/issues",
   "iot_class": "calculated",
   "requirements": [],
-  "homeassistant": "2026.03.0",
+  "homeassistant": "2026.3.0",
   "version": "0.2.0"
 }

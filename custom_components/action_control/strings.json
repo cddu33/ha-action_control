@@ -36,21 +36,21 @@
       },
       "add_rule_services": {
         "title": "Rule – which services",
-        "description": "Services actually available for {domains} are suggested below (the union of every service across all chosen domains); leave empty to watch every service in these domains, or type a service name that isn't listed.",
+        "description": "Services actually available for {domains} are suggested below; leave empty to watch every service in these domains, or type a service name that isn't listed.",
         "data": {
           "services": "Services (empty = any service in the domain)"
         }
       },
       "rule_verify": {
         "title": "Rule – verification & retries",
-        "description": "Define how the outcome is checked and how retries are handled. Whatever domain(s) you chose, sensible defaults are pre-filled for light, switch and cover; any other domain starts from a plain state-only check that you can refine here.",
+        "description": "Define how the outcome is checked and how retries are handled.",
         "data": {
           "check_delay": "Delay before the first check (seconds)",
           "attributes_to_check": "Attributes to check (in addition to state)",
           "tolerances": "Tolerances, as attr:value, attr2:value2",
           "retries": "Number of retries",
           "retry_delay": "Delay between retries (seconds)",
-          "wait_for_change": "Wait for an attribute to actually start changing (e.g. covers) instead of a snapshot check",
+          "wait_for_change": "Wait for an attribute to actually start changing (e.g. position covers) instead of a snapshot check",
           "change_attribute": "Attribute to watch for a change (e.g. current_position)",
           "change_timeout": "Timeout waiting for the change (seconds)"
         }

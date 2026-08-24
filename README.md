@@ -93,6 +93,9 @@ Each rule defines:
 - **Notifications**: persistent notification and/or a `notify.*` service
   of your choice.
 
+See the [full documentation](docs/documentation.md) for a field-by-field
+reference, ready-to-use recipes, debug logging, and FAQ.
+
 ## Usage example
 
 - A rule on the `light` domain checks that the requested brightness and
@@ -111,3 +114,5 @@ logger:
   logs:
     custom_components.action_control: debug
 ```
+
+See the [documentation](docs/documentation.md) for more, including the FAQ.
