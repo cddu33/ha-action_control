@@ -36,7 +36,7 @@
       },
       "add_rule_services": {
         "title": "Règle – quels services",
-        "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
+        "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous (l'union de tous les services des domaines choisis) ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
         "data": {
           "services": "Services (vide = tous les services du domaine)"
         }
