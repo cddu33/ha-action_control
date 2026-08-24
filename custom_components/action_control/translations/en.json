@@ -26,6 +26,7 @@
         "description": "Choose which domain(s) this rule watches, and which entities it applies to. The next step lets you pick the services to watch within these domains.",
         "data": {
           "name": "Name",
+          "enabled": "Rule enabled",
           "domains": "Domains",
           "entity_id_pattern": "Entity ID pattern (glob, e.g. cover.volet_*)",
           "name_pattern": "Friendly name pattern (glob)",
@@ -95,6 +96,9 @@
         }
       }
     },
+    "error": {
+      "invalid_tolerances": "Tolerances must be written as attribute:value, separated by commas (e.g. brightness:5, rgb_color:5)."
+    },
     "abort": {
       "no_rules": "No rule has been configured yet."
     }
@@ -102,7 +106,13 @@
   "entity": {
     "sensor": {
       "rule_status": {
-        "name": "{rule_name}"
+        "state": {
+          "idle": "Idle",
+          "ok": "OK",
+          "retrying": "Retrying",
+          "escalated": "Escalated",
+          "failed": "Failed"
+        }
       }
     }
   }

@@ -7,6 +7,7 @@ from fnmatch import fnmatchcase
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -21,28 +22,38 @@ def _ensure_list(value: Any) -> list[str]:
     return list(value)
 
 
+def _is_watchable(ent_reg: er.EntityRegistry, entity_id: str) -> bool:
+    """Whether an entity can be watched: a disabled one has no state at all,
+    so it would fail every check. Unregistered (YAML) entities are kept."""
+    entry = ent_reg.async_get(entity_id)
+    return entry is None or entry.disabled_by is None
+
+
 def resolve_target_entities(
     hass: HomeAssistant, service_data: dict[str, Any]
 ) -> set[str]:
     """Resolve every entity a call_service event's data actually targets.
 
-    Mirrors what the original automations did by hand with
-    area_entities/device_entities/label_entities: entity_id/device_id/
-    area_id/label_id are expanded to concrete entity ids using the entity
-    and device registries directly, so this keeps working across a wide
-    range of Home Assistant versions instead of depending on the newer
-    generic `helpers.target` resolver.
+    entity_id/device_id/area_id/label_id/floor_id are expanded to concrete
+    entity ids using the entity, device and area registries directly, so this
+    keeps working across a wide range of Home Assistant versions instead of
+    depending on the newer generic `helpers.target` resolver.
     """
     entity_ids = set(_ensure_list(service_data.get("entity_id")))
     device_ids = set(_ensure_list(service_data.get("device_id")))
     area_ids = set(_ensure_list(service_data.get("area_id")))
     label_ids = set(_ensure_list(service_data.get("label_id")))
-
-    if not (device_ids or area_ids or label_ids):
-        return entity_ids
+    floor_ids = set(_ensure_list(service_data.get("floor_id")))
 
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
+
+    if floor_ids:
+        area_reg = ar.async_get(hass)
+        for floor_id in floor_ids:
+            area_ids.update(
+                area.id for area in ar.async_entries_for_floor(area_reg, floor_id)
+            )
 
     for device_id in device_ids:
         entity_ids.update(
@@ -69,7 +80,9 @@ def resolve_target_entities(
                 for entry in er.async_entries_for_device(ent_reg, device.id)
             )
 
-    return entity_ids
+    return {
+        entity_id for entity_id in entity_ids if _is_watchable(ent_reg, entity_id)
+    }
 
 
 def rule_matches_service(rule: Rule, domain: str, service: str) -> bool:

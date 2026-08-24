@@ -6,7 +6,9 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
+from homeassistant.const import Platform
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import translation
 from homeassistant.helpers.selector import (
     ActionSelector,
@@ -32,22 +34,24 @@ from .domain_defaults import DOMAIN_PRESETS
 from .models import Rule
 
 
-def _parse_tolerances(text: str | None) -> dict[str, float]:
-    """Parse "attr:value, attr2:value2" into a tolerance dict."""
+def _parse_tolerances(text: str | None) -> tuple[dict[str, float], list[str]]:
+    """Parse "attr:value, attr2:value2", also returning the unusable chunks."""
     result: dict[str, float] = {}
-    if not text:
-        return result
-    for chunk in text.split(","):
+    invalid: list[str] = []
+    for chunk in (text or "").split(","):
         chunk = chunk.strip()
-        if not chunk or ":" not in chunk:
+        if not chunk:
             continue
-        attr, _, value = chunk.partition(":")
+        attr, separator, value = chunk.partition(":")
         attr = attr.strip()
+        if not separator or not attr:
+            invalid.append(chunk)
+            continue
         try:
             result[attr] = float(value.strip())
         except ValueError:
-            continue
-    return result
+            invalid.append(chunk)
+    return result, invalid
 
 
 def _format_tolerances(tolerances: dict[str, float]) -> str:
@@ -113,9 +117,22 @@ class ActionControlOptionsFlow(OptionsFlow):
 
     def _rule_choices(self) -> list[SelectOptionDict]:
         return [
-            SelectOptionDict(value=rule_id, label=data.get(c.CONF_NAME, rule_id))
+            SelectOptionDict(
+                value=rule_id,
+                label=("" if data.get(c.CONF_ENABLED, True) else "⏸ ")
+                + data.get(c.CONF_NAME, rule_id),
+            )
             for rule_id, data in self._rules.items()
         ]
+
+    def _remove_rule_entity(self, rule_id: str) -> None:
+        """Drop the rule's sensor, which would otherwise linger as unavailable."""
+        ent_reg = er.async_get(self.hass)
+        entity_id = ent_reg.async_get_entity_id(
+            Platform.SENSOR, c.DOMAIN, f"{self.config_entry.entry_id}_{rule_id}"
+        )
+        if entity_id:
+            ent_reg.async_remove(entity_id)
 
     # ---- global settings ----
 
@@ -185,6 +202,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         if user_input is not None:
             if user_input.get("confirm"):
                 self._rules.pop(self._editing_rule_id, None)
+                self._remove_rule_entity(self._editing_rule_id)
             return self._save()
         schema = vol.Schema({vol.Required("confirm", default=False): BooleanSelector()})
         rule_name = self._rules.get(self._editing_rule_id, {}).get(c.CONF_NAME, "")
@@ -228,6 +246,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             self._draft.update(
                 {
                     c.CONF_NAME: user_input[c.CONF_NAME],
+                    c.CONF_ENABLED: user_input.get(c.CONF_ENABLED, True),
                     c.CONF_DOMAINS: user_input[c.CONF_DOMAINS],
                     c.CONF_ENTITY_ID_PATTERN: user_input.get(c.CONF_ENTITY_ID_PATTERN) or None,
                     c.CONF_NAME_PATTERN: user_input.get(c.CONF_NAME_PATTERN) or None,
@@ -255,6 +274,9 @@ class ActionControlOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Required(c.CONF_NAME, default=self._draft.get(c.CONF_NAME, "")): str,
+                vol.Required(
+                    c.CONF_ENABLED, default=self._draft.get(c.CONF_ENABLED, True)
+                ): BooleanSelector(),
                 vol.Required(
                     c.CONF_DOMAINS, default=self._draft.get(c.CONF_DOMAINS, [])
                 ): SelectSelector(
@@ -328,16 +350,18 @@ class ActionControlOptionsFlow(OptionsFlow):
     async def async_step_rule_verify(
         self, user_input: dict[str, Any] | None = None
     ) -> Any:
+        errors: dict[str, str] = {}
+        tolerances_text: str | None = None
+
         if user_input is not None:
+            tolerances, invalid = _parse_tolerances(user_input.get(c.CONF_TOLERANCES))
             self._draft.update(
                 {
                     c.CONF_CHECK_DELAY: user_input[c.CONF_CHECK_DELAY],
                     c.CONF_ATTRIBUTES_TO_CHECK: user_input.get(
                         c.CONF_ATTRIBUTES_TO_CHECK, []
                     ),
-                    c.CONF_TOLERANCES: _parse_tolerances(
-                        user_input.get(c.CONF_TOLERANCES)
-                    ),
+                    c.CONF_TOLERANCES: tolerances,
                     c.CONF_RETRIES: user_input[c.CONF_RETRIES],
                     c.CONF_RETRY_DELAY: user_input[c.CONF_RETRY_DELAY],
                     c.CONF_WAIT_FOR_CHANGE: user_input[c.CONF_WAIT_FOR_CHANGE],
@@ -346,7 +370,10 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_CHANGE_TIMEOUT: user_input[c.CONF_CHANGE_TIMEOUT],
                 }
             )
-            return await self.async_step_rule_escalation()
+            if not invalid:
+                return await self.async_step_rule_escalation()
+            errors[c.CONF_TOLERANCES] = "invalid_tolerances"
+            tolerances_text = user_input.get(c.CONF_TOLERANCES) or ""
 
         preset: dict[str, Any] = {}
         domains = self._draft.get(c.CONF_DOMAINS, [])
@@ -358,6 +385,16 @@ class ActionControlOptionsFlow(OptionsFlow):
         )
         default_tolerances = self._draft.get(
             c.CONF_TOLERANCES, preset.get("tolerances", {})
+        )
+        if tolerances_text is None:
+            tolerances_text = _format_tolerances(default_tolerances)
+        # A brand new rule starts from the global defaults.
+        default_retries = self._draft.get(
+            c.CONF_RETRIES, self._global.get(c.CONF_DEFAULT_RETRIES, c.DEFAULT_RETRIES)
+        )
+        default_retry_delay = self._draft.get(
+            c.CONF_RETRY_DELAY,
+            self._global.get(c.CONF_DEFAULT_RETRY_DELAY, c.DEFAULT_RETRY_DELAY),
         )
         schema = vol.Schema(
             {
@@ -373,16 +410,16 @@ class ActionControlOptionsFlow(OptionsFlow):
                     SelectSelectorConfig(options=[], multiple=True, custom_value=True)
                 ),
                 vol.Optional(
-                    c.CONF_TOLERANCES, default=_format_tolerances(default_tolerances)
+                    c.CONF_TOLERANCES, default=tolerances_text
                 ): TextSelector(),
                 vol.Required(
-                    c.CONF_RETRIES, default=self._draft.get(c.CONF_RETRIES, c.DEFAULT_RETRIES)
+                    c.CONF_RETRIES, default=default_retries
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=10, step=1, mode=NumberSelectorMode.BOX)
                 ),
                 vol.Required(
                     c.CONF_RETRY_DELAY,
-                    default=self._draft.get(c.CONF_RETRY_DELAY, c.DEFAULT_RETRY_DELAY),
+                    default=default_retry_delay,
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=600, step=0.5, mode=NumberSelectorMode.BOX)
                 ),
@@ -409,7 +446,9 @@ class ActionControlOptionsFlow(OptionsFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="rule_verify", data_schema=schema)
+        return self.async_show_form(
+            step_id="rule_verify", data_schema=schema, errors=errors
+        )
 
     # ---- add / edit: page 3 - escalation & notifications ----
 

@@ -26,6 +26,7 @@
         "description": "Choisissez le(s) domaine(s) surveillé(s) par cette règle, et les entités concernées. L'étape suivante permet de choisir les services à surveiller dans ces domaines.",
         "data": {
           "name": "Nom",
+          "enabled": "Règle activée",
           "domains": "Domaines",
           "entity_id_pattern": "Entity_id (glob, ex. cover.volet_*)",
           "name_pattern": "Nom (glob)",
@@ -95,6 +96,9 @@
         }
       }
     },
+    "error": {
+      "invalid_tolerances": "Les tolérances doivent s'écrire attribut:valeur, séparées par des virgules (ex. brightness:5, rgb_color:5)."
+    },
     "abort": {
       "no_rules": "Aucune règle n'a encore été configurée."
     }
@@ -102,7 +106,13 @@
   "entity": {
     "sensor": {
       "rule_status": {
-        "name": "{rule_name}"
+        "state": {
+          "idle": "En attente",
+          "ok": "OK",
+          "retrying": "Relance en cours",
+          "escalated": "Escaladée",
+          "failed": "En échec"
+        }
       }
     }
   }

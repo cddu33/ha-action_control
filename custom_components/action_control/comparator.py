@@ -1,11 +1,9 @@
 """Generic, tolerance-aware comparison of expected vs. actual state/attributes.
 
-Generalizes the tolerance logic from the original lights/switches watchdog
-automation (brightness +/-5, rgb +/-5 per channel, kelvin +/-100, xy +/-0.01)
-to any attribute of any domain: scalars are compared with an absolute-value
-tolerance, list/tuple values (rgb_color, xy_color, ...) are compared
-element-wise with that same tolerance applied to each element, and anything
-else (strings, booleans, None) requires an exact match.
+Scalars are compared with an absolute-value tolerance, list/tuple values
+(rgb_color, xy_color, ...) element-wise with that same tolerance, anything
+else (strings, booleans, None) by exact match. The expected state is a set,
+not a single value, so transitional states like "opening" still pass.
 """
 from __future__ import annotations
 
@@ -13,8 +11,53 @@ from typing import Any
 
 from homeassistant.core import State
 
-from .domain_defaults import SERVICE_DATA_ATTRIBUTE_ALIASES, STATE_SERVICES, TOGGLE_SERVICES
+from .domain_defaults import (
+    ON_OFF_DOMAINS,
+    ON_OFF_SERVICE_STATES,
+    SERVICE_DATA_ATTRIBUTE_SOURCES,
+    SERVICE_EXPECTED_STATES,
+    TOGGLE_OPEN_CLOSE_DOMAINS,
+)
 from .models import ComparisonResult, Mismatch
+
+
+def _as_state_set(expected_state: Any) -> frozenset[str] | None:
+    """Normalize an expected state (str, iterable or None) to a set."""
+    if expected_state is None:
+        return None
+    if isinstance(expected_state, str):
+        return frozenset({expected_state})
+    return frozenset(expected_state)
+
+
+def format_expected_state(expected_state: Any) -> str | None:
+    """Human-readable form of an expected state, for logs and notifications."""
+    states = _as_state_set(expected_state)
+    if states is None:
+        return None
+    return " | ".join(sorted(states))
+
+
+def expected_states_for(
+    domain: str, service: str, current_state: State | None
+) -> frozenset[str] | None:
+    """Acceptable states after `domain.service`, or None if it implies none."""
+    if service == "toggle":
+        if domain in TOGGLE_OPEN_CLOSE_DOMAINS:
+            open_states, when_open, when_closed = TOGGLE_OPEN_CLOSE_DOMAINS[domain]
+            is_open = current_state is not None and current_state.state in open_states
+            return when_open if is_open else when_closed
+        if domain in ON_OFF_DOMAINS:
+            was_on = current_state is not None and current_state.state == "on"
+            return frozenset({"off"}) if was_on else frozenset({"on"})
+        return None
+
+    expected = SERVICE_EXPECTED_STATES.get((domain, service))
+    if expected is not None:
+        return expected
+    if domain in ON_OFF_DOMAINS:
+        return ON_OFF_SERVICE_STATES.get(service)
+    return None
 
 
 def compute_expected(
@@ -23,20 +66,18 @@ def compute_expected(
     service_data: dict[str, Any],
     attributes_to_check: list[str],
     current_state: State | None,
-) -> tuple[str | None, dict[str, Any]]:
-    """Derive the expected state and attributes for a just-issued service call."""
-    if service in TOGGLE_SERVICES:
-        was_on = current_state is not None and current_state.state == "on"
-        expected_state: str | None = "off" if was_on else "on"
-    else:
-        expected_state = STATE_SERVICES.get(service)
+) -> tuple[frozenset[str] | None, dict[str, Any]]:
+    """Derive the expected state(s) and attributes for a just-issued call."""
+    expected_state = expected_states_for(domain, service, current_state)
 
-    aliases = SERVICE_DATA_ATTRIBUTE_ALIASES.get((domain, service), {})
+    sources = SERVICE_DATA_ATTRIBUTE_SOURCES.get((domain, service), {})
     expected_attributes: dict[str, Any] = {}
     for attr in attributes_to_check:
-        data_key = aliases.get(attr, attr)
-        if data_key in service_data:
-            expected_attributes[attr] = service_data[data_key]
+        for data_key, convert in sources.get(attr, ((attr, None),)):
+            if data_key in service_data:
+                value = service_data[data_key]
+                expected_attributes[attr] = convert(value) if convert else value
+                break
 
     return expected_state, expected_attributes
 
@@ -61,22 +102,24 @@ def _values_match(expected: Any, actual: Any, tolerance: float) -> bool:
 
 
 def compare(
-    expected_state: str | None,
+    expected_state: Any,
     expected_attributes: dict[str, Any],
     tolerances: dict[str, float],
     actual: State | None,
 ) -> ComparisonResult:
     """Compare the current state/attributes of an entity against expectations."""
     mismatches: list[Mismatch] = []
+    expected_states = _as_state_set(expected_state)
+    expected_label = format_expected_state(expected_states)
 
     if actual is None:
-        mismatches.append(Mismatch("state", expected_state, None))
+        mismatches.append(Mismatch("state", expected_label, None))
         for attr, expected in expected_attributes.items():
             mismatches.append(Mismatch(attr, expected, None))
         return ComparisonResult(ok=False, mismatches=mismatches)
 
-    if expected_state is not None and actual.state != expected_state:
-        mismatches.append(Mismatch("state", expected_state, actual.state))
+    if expected_states is not None and actual.state not in expected_states:
+        mismatches.append(Mismatch("state", expected_label, actual.state))
 
     for attr, expected in expected_attributes.items():
         actual_value = actual.attributes.get(attr)

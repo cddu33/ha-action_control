@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 
 from . import comparator, matching, watchdog
 from .const import CONF_GLOBAL_ENABLED, DOMAIN, OPT_GLOBAL, OPT_RULES
@@ -20,6 +21,10 @@ from .models import Rule, RuleRunStatus
 _LOGGER = logging.getLogger(__name__)
 
 SIGNAL_RULE_UPDATE = f"{DOMAIN}_rule_update"
+
+STORAGE_VERSION = 1
+STORAGE_KEY = f"{DOMAIN}.escalation_cooldowns"
+STORAGE_SAVE_DELAY = 5
 
 
 class ActionControlEngine:
@@ -33,8 +38,10 @@ class ActionControlEngine:
         self.contexts = SelfIssuedContexts()
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._escalation_cooldowns: dict[str, float] = {}
+        self._run_tokens: dict[tuple[str, str], int] = {}
         self._tasks: set[asyncio.Task] = set()
         self._unsub_listener: callback | None = None
+        self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.load_rules()
 
     def load_rules(self) -> None:
@@ -53,17 +60,48 @@ class ActionControlEngine:
             self._locks[key] = asyncio.Lock()
         return self._locks[key]
 
+    def next_run_token(self, rule_id: str, entity_id: str) -> int:
+        """Claim the newest run for this (rule, entity)."""
+        key = (rule_id, entity_id)
+        token = self._run_tokens.get(key, 0) + 1
+        self._run_tokens[key] = token
+        return token
+
+    def is_current_run(self, rule_id: str, entity_id: str, token: int) -> bool:
+        return self._run_tokens.get((rule_id, entity_id)) == token
+
+    # Cooldown deadlines are wall-clock epochs, not monotonic ones, so they
+    # still mean something after a restart.
     def escalation_ready(self, rule_id: str) -> bool:
-        return time.monotonic() >= self._escalation_cooldowns.get(rule_id, 0)
+        return time.time() >= self._escalation_cooldowns.get(rule_id, 0)
 
     def arm_escalation_cooldown(self, rule_id: str, seconds: float) -> None:
-        self._escalation_cooldowns[rule_id] = time.monotonic() + seconds
+        self._escalation_cooldowns[rule_id] = time.time() + seconds
+        self._store.async_delay_save(self._cooldowns_to_save, STORAGE_SAVE_DELAY)
+
+    def _cooldowns_to_save(self) -> dict[str, Any]:
+        now = time.time()
+        return {
+            "cooldowns": {
+                rule_id: deadline
+                for rule_id, deadline in self._escalation_cooldowns.items()
+                if deadline > now
+            }
+        }
 
     def set_status(self, rule_id: str, status: RuleRunStatus) -> None:
         self.rule_status[rule_id] = status
         async_dispatcher_send(self.hass, SIGNAL_RULE_UPDATE, rule_id)
 
     async def async_setup(self) -> None:
+        stored = await self._store.async_load()
+        if stored:
+            now = time.time()
+            self._escalation_cooldowns = {
+                rule_id: deadline
+                for rule_id, deadline in (stored.get("cooldowns") or {}).items()
+                if deadline > now
+            }
         self._unsub_listener = self.hass.bus.async_listen(
             EVENT_CALL_SERVICE, self._handle_call_service
         )
@@ -127,6 +165,11 @@ class ActionControlEngine:
                 if not matching.entity_matches_rule(self.hass, rule, entity_id):
                     continue
                 current_state = self.hass.states.get(entity_id)
+                if current_state is None:
+                    _LOGGER.debug(
+                        "Rule '%s': %s has no state, nothing to watch", rule.name, entity_id
+                    )
+                    continue
                 expected_state, expected_attrs = comparator.compute_expected(
                     domain, service, service_data, rule.attributes_to_check, current_state
                 )
@@ -136,7 +179,7 @@ class ActionControlEngine:
                     entity_id,
                     domain,
                     service,
-                    expected_state,
+                    comparator.format_expected_state(expected_state),
                     expected_attrs,
                 )
                 task = self.hass.async_create_task(
@@ -149,6 +192,7 @@ class ActionControlEngine:
                         service_data,
                         expected_state,
                         expected_attrs,
+                        self.next_run_token(rule.rule_id, entity_id),
                     ),
                     f"{DOMAIN}_watchdog_{rule.rule_id}_{entity_id}",
                 )
