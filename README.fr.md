@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/brand/logo.png" alt="Action Control" width="256">
+  <img src="custom_components/action_control/brand/logo.png" alt="Action Control" width="256">
 </p>
 
 # Action Control
@@ -30,6 +30,15 @@ interne basé sur le `Context` de Home Assistant.
 
 Copier le dossier `custom_components/action_control` dans le répertoire
 `custom_components` de votre configuration Home Assistant, puis redémarrer.
+
+### À propos de l'icône
+
+L'intégration embarque sa propre icône sous `custom_components/action_control/brand/`.
+Home Assistant 2026.3.0+ la sert automatiquement via l'API proxy locale
+[Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
+(aucune configuration nécessaire). Sur une version plus ancienne de Home
+Assistant, l'icône ne s'affichera simplement pas — l'intégration fonctionne
+de la même façon dans les deux cas.
 
 ## Configuration
 
