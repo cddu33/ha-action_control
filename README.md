@@ -1,71 +1,106 @@
 # Action Control
 
-Contrôle générique, configurable via l'interface Home Assistant, de la bonne
-exécution de vos commandes (`light.turn_on`, `switch.turn_off`,
-`cover.set_cover_position`, ou n'importe quel autre appel de service).
+*English | [Français](README.fr.md)*
 
-Cette intégration généralise le principe de deux automations YAML :
-vérifier qu'une commande a bien été appliquée, la relancer en cas d'échec,
-notifier, et éventuellement déclencher une action de secours (par exemple
-activer un switch) si le problème persiste — le tout sans écrire de YAML,
-et sans risque de boucle de réémission grâce à un mécanisme anti-boucle
-interne basé sur le `Context` de Home Assistant.
+A generic, fully UI-configurable watchdog for Home Assistant: verify that
+your commands (`light.turn_on`, `switch.turn_off`,
+`cover.set_cover_position`, or any other service call) actually took
+effect.
+
+This integration generalizes the pattern behind two hand-written YAML
+automations: check that a command was actually applied, retry it on
+failure, notify you, and optionally trigger a recovery action (e.g.
+turning on a switch) if the problem persists — all without writing any
+YAML, and without risk of a retry loop thanks to a built-in anti-loop
+mechanism based on Home Assistant's `Context`.
+
+## Features
+
+- **Generic command verification** — watches any domain/service call, not
+  just light/switch/cover.
+- **Customizable targeting per rule** — domain(s), service(s), `entity_id`
+  glob pattern, friendly-name pattern, areas, labels, and/or devices.
+- **Tolerance-based verification** — scalar tolerance (e.g. `brightness`
+  ±5), element-wise tolerance for list attributes (`rgb_color`,
+  `xy_color`), exact match for text/boolean attributes.
+- **Movement/change detection** — for entities like covers, waits for an
+  attribute (e.g. `current_position`) to actually start changing instead
+  of doing a snapshot comparison.
+- **Immediate exit when already satisfied** — a no-op command, or one
+  already applied by the time the event fires, resolves instantly with no
+  delay or notification.
+- **Configurable retries** — retry count and delay, per rule.
+- **Configurable escalation** — an optional recovery action (turn on a
+  switch, run a script, ...) triggered after persistent failure, with a
+  cooldown between escalations and a delay before replaying the original
+  command.
+- **Notifications** — persistent notification and/or a `notify.*` service
+  of your choice, per rule.
+- **Built-in anti-loop protection** — every command the integration
+  re-issues carries its own tracked `Context`, so the resulting
+  `call_service` event is recognized and ignored before it can re-trigger
+  any rule. No guard entity to configure.
+- **Fully configured through the UI** — Config Flow (setup) + Options Flow
+  (add/edit/delete rules, global settings). No YAML required.
+- **Per-rule status sensor** — a diagnostic sensor (`ok` / `retrying` /
+  `escalated` / `failed`) with the details of the last check.
+- **Bilingual UI** — English and French.
 
 ## Installation
 
 ### Via HACS
 
-1. HACS → Intégrations → menu (⋮) → *Dépôts personnalisés*.
-2. Ajouter `https://github.com/cddu33/ha-action_control` en catégorie
-   *Intégration*.
-3. Installer *Action Control*, puis redémarrer Home Assistant.
+1. HACS → Integrations → menu (⋮) → *Custom repositories*.
+2. Add `https://github.com/cddu33/ha-action_control` as category
+   *Integration*.
+3. Install *Action Control*, then restart Home Assistant.
 
-### Manuelle
+### Manual
 
-Copier le dossier `custom_components/action_control` dans le répertoire
-`custom_components` de votre configuration Home Assistant, puis redémarrer.
+Copy the `custom_components/action_control` folder into the
+`custom_components` directory of your Home Assistant configuration, then
+restart.
 
 ## Configuration
 
-Paramètres → Appareils et services → Ajouter une intégration → *Action
-Control*. Toute la configuration (règles de surveillance, options
-d'escalade, notifications) se fait ensuite depuis le bouton *Configurer*
-de l'intégration — aucun YAML n'est nécessaire.
+Settings → Devices & services → Add integration → *Action Control*. All
+configuration (watchdog rules, escalation options, notifications) is then
+done from the integration's *Configure* button — no YAML needed.
 
-Chaque règle définit :
+Each rule defines:
 
-- **Ciblage** : domaine(s), service(s), motif d'`entity_id`, motif de nom,
-  pièces, étiquettes, appareils.
-- **Vérification** : délai avant contrôle, attributs à vérifier avec
-  tolérance (ex. `brightness`, `rgb_color`), nombre de relances et délai
-  entre relances. Les domaines `light`, `switch` et `cover` sont préremplis
-  avec des valeurs par défaut adaptées.
-- **Escalade** (optionnelle) : une action de secours (ex. activer un
-  switch, relancer un script) déclenchée si la vérification échoue de
-  manière persistante, avec un délai minimum entre deux escalades.
-- **Notifications** : notification persistante et/ou service `notify.*` de
-  votre choix.
+- **Targeting**: domain(s), service(s), `entity_id` pattern, name pattern,
+  areas, labels, devices.
+- **Verification**: delay before the first check, attributes to check with
+  tolerance (e.g. `brightness`, `rgb_color`), retry count and delay
+  between retries. The `light`, `switch`, and `cover` domains come with
+  sensible defaults pre-filled.
+- **Escalation** (optional): a recovery action (e.g. turning on a switch,
+  running a script) triggered when verification keeps failing, with a
+  minimum delay between two escalations.
+- **Notifications**: persistent notification and/or a `notify.*` service
+  of your choice.
 
-## Exemple d'usage
+## Usage example
 
-- Une règle sur le domaine `light` vérifie que la luminosité et la couleur
-  demandées ont bien été appliquées, avec tolérance, et relance la commande
-  jusqu'à 2 fois en cas d'échec.
-- Une règle sur le domaine `cover`, avec un motif `cover.volet_*`, attend
-  qu'un volet commence réellement à bouger ; si ce n'est pas le cas, elle
-  active un switch de redémarrage de passerelle puis rejoue la commande.
+- A rule on the `light` domain checks that the requested brightness and
+  color were actually applied, with tolerance, and retries the command up
+  to 2 times on failure.
+- A rule on the `cover` domain, with an `cover.volet_*` pattern, waits for
+  a cover to actually start moving; if it doesn't, it turns on a gateway
+  restart switch and then replays the command.
 
-## Anti-boucle
+## Anti-loop
 
-Aucune configuration n'est nécessaire pour éviter qu'une commande rejouée
-par l'intégration ne se re-déclenche elle-même : chaque appel de service
-émis par Action Control (relance, rejeu après escalade) porte un `Context`
-propre, mémorisé en interne, et le déclencheur ignore tout événement
-`call_service` portant ce contexte avant tout traitement.
+No configuration is needed to prevent a command replayed by the
+integration from re-triggering itself: every service call issued by
+Action Control (a retry, or a replay after escalation) carries its own
+`Context`, tracked internally, and the listener ignores any `call_service`
+event carrying that context before any processing happens.
 
-## Dépannage
+## Troubleshooting
 
-Activer les journaux de débogage :
+Enable debug logging:
 
 ```yaml
 logger:
