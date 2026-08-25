@@ -66,6 +66,11 @@ CONF_ESCALATION_ENABLED = "escalation_enabled"
 CONF_ESCALATION_ACTION = "escalation_action"
 CONF_ESCALATION_COOLDOWN = "escalation_cooldown"
 CONF_ESCALATION_REPLAY_DELAY = "escalation_replay_delay"
+CONF_ESCALATION_CHECK_ENTITY_ID = "escalation_check_entity_id"
+CONF_ESCALATION_CHECK_STATE = "escalation_check_state"
+CONF_ESCALATION_CHECK_DELAY = "escalation_check_delay"
+
+DEFAULT_ESCALATION_CHECK_DELAY = 5.0
 
 CONF_NOTIFY_PERSISTENT = "notify_persistent"
 CONF_NOTIFY_SERVICE = "notify_service"
@@ -81,3 +86,13 @@ STATUS_ESCALATED = "escalated"
 STATUS_FAILED = "failed"
 
 CONTEXT_TTL = 120  # seconds a self-issued context id is remembered
+
+# services
+SERVICE_RUN_RULE = "run_rule"
+SERVICE_RESET_ESCALATION_COOLDOWN = "reset_escalation_cooldown"
+ATTR_RULE_SENSOR = "rule_sensor"
+ATTR_ENTITY_ID = "entity_id"
+ATTR_SERVICE_DATA = "service_data"
+
+# repair issues
+ISSUE_STALE_TARGET = "stale_target"

@@ -66,6 +66,9 @@
           "escalation_action": "Escalation action",
           "escalation_cooldown": "Minimum time between two escalations (seconds)",
           "escalation_replay_delay": "Delay after escalation before replaying the command (seconds)",
+          "escalation_check_entity_id": "Entity to verify after the escalation action (optional)",
+          "escalation_check_state": "State it should reach (e.g. on)",
+          "escalation_check_delay": "Delay before checking it (seconds)",
           "notify_persistent": "Notify via a persistent notification",
           "notify_service": "Also notify via this notify service"
         }
@@ -125,6 +128,42 @@
         "linear": "Linear (delay × attempt number)",
         "exponential": "Exponential (delay doubles each time)"
       }
+    }
+  },
+  "services": {
+    "run_rule": {
+      "name": "Run rule",
+      "description": "Test a rule on demand: re-issues the given service on the entity and lets the rule verify it, exactly as if the service had been called normally.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Rule",
+          "description": "The rule's status sensor."
+        },
+        "entity_id": {
+          "name": "Entity",
+          "description": "The entity to test the rule against."
+        },
+        "service_data": {
+          "name": "Service data",
+          "description": "Data for the service call. Include a \"service\" key to override the rule's default service."
+        }
+      }
+    },
+    "reset_escalation_cooldown": {
+      "name": "Reset escalation cooldown",
+      "description": "Clear a rule's escalation cooldown so it can escalate again immediately.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Rule",
+          "description": "The rule's status sensor."
+        }
+      }
+    }
+  },
+  "issues": {
+    "stale_target": {
+      "title": "Action Control: rule targets a missing area, label, or device",
+      "description": "Rule \"{rule}\" targets one or more areas, labels, or devices that no longer exist. It won't match anything until you update or remove that target in the rule's targeting step."
     }
   }
 }

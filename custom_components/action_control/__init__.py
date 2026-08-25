@@ -6,6 +6,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import DATA_ENGINE, DOMAIN, PLATFORMS
 from .coordinator import ActionControlEngine
+from .services import async_setup_services, async_unload_services
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -14,6 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await engine.async_setup()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {DATA_ENGINE: engine}
+    await async_setup_services(hass)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -28,6 +30,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
         if data:
             await data[DATA_ENGINE].async_unload()
+        if not hass.data.get(DOMAIN):
+            async_unload_services(hass)
     return unload_ok
 
 

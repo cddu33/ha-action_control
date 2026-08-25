@@ -16,6 +16,7 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
     DeviceSelector,
     DeviceSelectorConfig,
+    EntitySelector,
     LabelSelector,
     LabelSelectorConfig,
     NumberSelector,
@@ -482,6 +483,15 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_ESCALATION_REPLAY_DELAY: user_input[
                         c.CONF_ESCALATION_REPLAY_DELAY
                     ],
+                    c.CONF_ESCALATION_CHECK_ENTITY_ID: user_input.get(
+                        c.CONF_ESCALATION_CHECK_ENTITY_ID
+                    )
+                    or None,
+                    c.CONF_ESCALATION_CHECK_STATE: user_input.get(
+                        c.CONF_ESCALATION_CHECK_STATE
+                    )
+                    or None,
+                    c.CONF_ESCALATION_CHECK_DELAY: user_input[c.CONF_ESCALATION_CHECK_DELAY],
                     c.CONF_NOTIFY_PERSISTENT: user_input[c.CONF_NOTIFY_PERSISTENT],
                     c.CONF_NOTIFY_SERVICE: user_input.get(c.CONF_NOTIFY_SERVICE) or None,
                 }
@@ -489,6 +499,15 @@ class ActionControlOptionsFlow(OptionsFlow):
             return self._finalize_rule()
 
         notify_services = sorted(self.hass.services.async_services().get("notify", {}))
+        # EntitySelector rejects "" as an entity id, so it can't use a plain
+        # `default=""` like the other optional fields here -- prefill it via
+        # `suggested_value` instead, which skips voluptuous validation.
+        check_entity_key = vol.Optional(
+            c.CONF_ESCALATION_CHECK_ENTITY_ID,
+            description={
+                "suggested_value": self._draft.get(c.CONF_ESCALATION_CHECK_ENTITY_ID)
+            },
+        )
         schema = vol.Schema(
             {
                 vol.Required(
@@ -514,6 +533,19 @@ class ActionControlOptionsFlow(OptionsFlow):
                     ),
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=3600, step=1, mode=NumberSelectorMode.BOX)
+                ),
+                check_entity_key: EntitySelector(),
+                vol.Optional(
+                    c.CONF_ESCALATION_CHECK_STATE,
+                    default=self._draft.get(c.CONF_ESCALATION_CHECK_STATE) or "",
+                ): TextSelector(),
+                vol.Required(
+                    c.CONF_ESCALATION_CHECK_DELAY,
+                    default=self._draft.get(
+                        c.CONF_ESCALATION_CHECK_DELAY, c.DEFAULT_ESCALATION_CHECK_DELAY
+                    ),
+                ): NumberSelector(
+                    NumberSelectorConfig(min=0, max=600, step=1, mode=NumberSelectorMode.BOX)
                 ),
                 vol.Required(
                     c.CONF_NOTIFY_PERSISTENT,

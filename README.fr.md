@@ -40,7 +40,13 @@ interne basé sur le `Context` de Home Assistant.
 - **Escalade configurable** — action de secours optionnelle (activer un
   switch, lancer un script...) déclenchée après échec persistant, avec un
   délai de recharge entre deux escalades et un délai avant de rejouer la
-  commande d'origine.
+  commande d'origine. Vérifiable : l'action de secours peut être relancée
+  jusqu'à ce qu'une entité choisie confirme qu'elle a bien fonctionné,
+  avant de rejouer la commande d'origine.
+- **Services à la demande** — `run_rule` pour tester une règle avec un
+  vrai appel de service sans attendre qu'il se produise, et
+  `reset_escalation_cooldown` pour qu'une règle puisse escalader à nouveau
+  immédiatement.
 - **Notifications** — notification persistante et/ou service `notify.*` de
   votre choix, par règle.
 - **Protection anti-boucle intégrée** — chaque commande réémise porte son
@@ -53,6 +59,9 @@ interne basé sur le `Context` de Home Assistant.
 - **Capteur de statut par règle** — un capteur de diagnostic (`ok` /
   `retrying` / `escalated` / `failed`) avec le détail de la dernière
   vérification.
+- **Diagnostics et réparations** — un export de diagnostics téléchargeable
+  pour les rapports de bug, et une réparation signalée quand une règle
+  cible une zone/étiquette/appareil qui n'existe plus.
 - **Règles suspendables** — une règle peut être désactivée sans être
   supprimée.
 - **Interface bilingue** — français et anglais.

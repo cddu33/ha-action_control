@@ -10,11 +10,15 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_CALL_SERVICE
 from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 
 from . import comparator, matching, watchdog
-from .const import CONF_GLOBAL_ENABLED, DOMAIN, OPT_GLOBAL, OPT_RULES
+from .const import CONF_GLOBAL_ENABLED, DOMAIN, ISSUE_STALE_TARGET, OPT_GLOBAL, OPT_RULES
 from .context_registry import SelfIssuedContexts
 from .models import Rule, RuleRunStatus
 
@@ -79,6 +83,10 @@ class ActionControlEngine:
         self._escalation_cooldowns[rule_id] = time.time() + seconds
         self._store.async_delay_save(self._cooldowns_to_save, STORAGE_SAVE_DELAY)
 
+    def clear_escalation_cooldown(self, rule_id: str) -> None:
+        if self._escalation_cooldowns.pop(rule_id, None) is not None:
+            self._store.async_delay_save(self._cooldowns_to_save, STORAGE_SAVE_DELAY)
+
     def _cooldowns_to_save(self) -> dict[str, Any]:
         now = time.time()
         return {
@@ -93,6 +101,31 @@ class ActionControlEngine:
         self.rule_status[rule_id] = status
         async_dispatcher_send(self.hass, SIGNAL_RULE_UPDATE, rule_id)
 
+    def _check_stale_targets(self) -> None:
+        """Raise a repair issue for rules whose area/label/device target was deleted."""
+        area_reg = ar.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        label_reg = lr.async_get(self.hass)
+        for rule in self.rules.values():
+            missing = (
+                any(area_reg.async_get_area(a) is None for a in rule.area_ids)
+                or any(dev_reg.async_get(d) is None for d in rule.device_ids)
+                or any(label_reg.async_get_label(label) is None for label in rule.label_ids)
+            )
+            issue_id = f"{ISSUE_STALE_TARGET}_{rule.rule_id}"
+            if missing:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_STALE_TARGET,
+                    translation_placeholders={"rule": rule.name},
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
     async def async_setup(self) -> None:
         stored = await self._store.async_load()
         if stored:
@@ -102,6 +135,7 @@ class ActionControlEngine:
                 for rule_id, deadline in (stored.get("cooldowns") or {}).items()
                 if deadline > now
             }
+        self._check_stale_targets()
         self._unsub_listener = self.hass.bus.async_listen(
             EVENT_CALL_SERVICE, self._handle_call_service
         )
