@@ -34,9 +34,11 @@ interne basé sur le `Context` de Home Assistant.
 - **Relances configurables** — nombre et délai par règle, avec un choix
   d'évolution du délai entre relances (constant, linéaire ou exponentiel).
 - **Mesure du temps de réponse** — `response_duration` est exposé sur le
-  capteur de statut pour chaque vérification, avec un résumé optionnel par
-  règle au niveau info (entité, résultat, temps de réponse, nombre de
-  tentatives), visible sans activer le débogage.
+  capteur de statut pour chaque vérification.
+- **Log optionnel par règle au niveau info** — un résumé d'une ligne par
+  entité (résultat, temps de réponse, nombre de tentatives) au niveau
+  `info`, pour une visibilité immédiate sans activer le débogage. Désactivé
+  par défaut, activable par règle.
 - **Escalade configurable** — action de secours optionnelle (activer un
   switch, lancer un script...) déclenchée après échec persistant, avec un
   délai de recharge entre deux escalades et un délai avant de rejouer la
