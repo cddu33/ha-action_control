@@ -76,6 +76,7 @@ class RuleStatusSensor(ActionControlEntity, SensorEntity):
             "attempt": status.attempt,
             "mismatches": status.mismatches,
             "last_checked": status.last_checked,
+            "response_duration": status.response_duration,
         }
 
     async def async_added_to_hass(self) -> None:

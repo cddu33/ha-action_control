@@ -363,10 +363,12 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_TOLERANCES: tolerances,
                     c.CONF_RETRIES: user_input[c.CONF_RETRIES],
                     c.CONF_RETRY_DELAY: user_input[c.CONF_RETRY_DELAY],
+                    c.CONF_RETRY_BACKOFF: user_input[c.CONF_RETRY_BACKOFF],
                     c.CONF_WAIT_FOR_CHANGE: user_input[c.CONF_WAIT_FOR_CHANGE],
                     c.CONF_CHANGE_ATTRIBUTE: user_input.get(c.CONF_CHANGE_ATTRIBUTE)
                     or None,
                     c.CONF_CHANGE_TIMEOUT: user_input[c.CONF_CHANGE_TIMEOUT],
+                    c.CONF_LOG_ENTITY_INFO: user_input[c.CONF_LOG_ENTITY_INFO],
                 }
             )
             if not invalid:
@@ -423,6 +425,16 @@ class ActionControlOptionsFlow(OptionsFlow):
                     NumberSelectorConfig(min=0, max=600, step=0.5, mode=NumberSelectorMode.BOX)
                 ),
                 vol.Required(
+                    c.CONF_RETRY_BACKOFF,
+                    default=self._draft.get(c.CONF_RETRY_BACKOFF, c.DEFAULT_RETRY_BACKOFF),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(c.RETRY_BACKOFF_MODES),
+                        translation_key=c.CONF_RETRY_BACKOFF,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
                     c.CONF_WAIT_FOR_CHANGE,
                     default=self._draft.get(
                         c.CONF_WAIT_FOR_CHANGE, preset.get("wait_for_change", False)
@@ -443,6 +455,12 @@ class ActionControlOptionsFlow(OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(min=1, max=600, step=1, mode=NumberSelectorMode.BOX)
                 ),
+                vol.Required(
+                    c.CONF_LOG_ENTITY_INFO,
+                    default=self._draft.get(
+                        c.CONF_LOG_ENTITY_INFO, c.DEFAULT_LOG_ENTITY_INFO
+                    ),
+                ): BooleanSelector(),
             }
         )
         return self.async_show_form(

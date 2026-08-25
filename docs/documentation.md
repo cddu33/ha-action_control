@@ -124,9 +124,11 @@ entity in scope for its domain(s)/service(s) — e.g. "watch every light".
 | Tolerances | `attr:value, attr2:value2` — per-attribute numeric tolerance. List attributes (like `rgb_color`) apply the tolerance element by element. Entries that can't be parsed are ignored. | none (exact match) |
 | Number of retries | How many times to re-issue the command if verification fails. | 2 (0–10) |
 | Delay between retries | Seconds between each retry (delay mode only). | 2 (0–600) |
+| Delay growth between retries | How the delay between retries grows: `constant` (same delay every time), `linear` (delay × attempt number), or `exponential` (delay doubles each time, capped at 3600 s). Only affects delay mode — movement mode has no delay between retries to begin with. | constant |
 | Wait for change | Switches to movement mode: waits for `change_attribute` to actually change instead of comparing a snapshot. | off |
 | Attribute to watch | The attribute movement mode watches (e.g. `current_position`). Required for that mode: left empty, the rule stays in delay mode. | — |
 | Timeout waiting for the change | Seconds to wait for that attribute to change before considering it a failure. | 45 (1–600) |
+| Log a summary for this rule at info level | When on, every entity's final outcome (ok/escalated/failed) for this rule is also logged at `info` level — entity, outcome, response time, attempt count — visible without enabling debug logging. Off by default; the full step-by-step trace is still only in the debug log. | off |
 
 When a rule targets exactly one of the `light`, `switch` or `cover`
 domains, sensible defaults are pre-filled automatically:
@@ -214,6 +216,16 @@ state attribute name:
 - An attribute expected to be `None` always counts as satisfied; an entity
   with no state at all is always a mismatch.
 
+**Domains with nothing meaningful to compare** (scenes, and any domain/
+service combination not listed above with no attributes configured either)
+get an expected state of `None` and no expected attributes. The early-exit
+check on such a rule is then trivially satisfied — it resolves immediately,
+with no delay and no retry, the first time it runs. This is intentional: a
+scene's own state is a last-activated timestamp, not a target to reach, so
+there is nothing to verify beyond the call having been accepted. A `scene`
+preset (empty, like `switch`) exists mainly to make this explicit rather
+than an implicit side effect.
+
 ## Status sensor
 
 Each rule gets one diagnostic sensor named after the rule, grouped under a
@@ -231,7 +243,10 @@ outcome:
 The state labels are translated (English/French), as are the notification
 texts. Attributes: `entity_id`, `expected_state`, `expected_attributes`,
 `actual_state`, `actual_attributes`, `attempt`, `mismatches`,
-`last_checked` (UTC, ISO 8601).
+`last_checked` (UTC, ISO 8601), `response_duration` (seconds elapsed since
+the command was issued, measured from the moment the `call_service` event
+fired to the current status — keeps growing while `retrying`, settles once
+the rule resolves).
 
 The sensor reflects the rule's **latest** run. When one command targets
 several entities, they are all watched, but the sensor keeps the last
@@ -283,6 +298,18 @@ Verifies that a cover reached the position that was requested, ±2 %. The
 - Delay before the first check: 5 s
 
 Catches setpoints silently dropped by a flaky radio link.
+
+### Scene activation
+
+- Domains: `scene`
+- Services: `turn_on` (or leave empty)
+
+There is nothing to verify (a scene's state is a timestamp, not a target),
+so the rule resolves immediately with no delay and no retry. Configuring
+it at all is mostly useful for the response-time metric it still records
+(`response_duration` on the sensor, and the info-level log if enabled),
+which doubles as confirmation that the `scene.turn_on` call itself went
+through.
 
 ## Debug logging
 

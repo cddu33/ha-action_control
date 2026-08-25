@@ -29,6 +29,17 @@ DOMAIN_PRESETS: dict[str, dict[str, Any]] = {
         "tolerances": {},
         "wait_for_change": False,
     },
+    "scene": {
+        # Scenes have no meaningful attribute to compare (their state is a
+        # last-activated timestamp, not a target to reach), so the preset is
+        # intentionally empty: with no expected_state/expected_attributes,
+        # a scene rule resolves immediately on the early-exit check, with no
+        # retries -- the generic "no-op" behavior of the engine already does
+        # the right thing here.
+        "attributes_to_check": [],
+        "tolerances": {},
+        "wait_for_change": False,
+    },
     "cover": {
         "attributes_to_check": [],
         "tolerances": {},

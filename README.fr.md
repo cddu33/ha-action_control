@@ -31,7 +31,12 @@ interne basé sur le `Context` de Home Assistant.
 - **Sortie immédiate si déjà satisfait** — une commande sans effet, ou déjà
   appliquée quand l'événement se déclenche, se résout instantanément, sans
   délai ni notification.
-- **Relances configurables** — nombre et délai, par règle.
+- **Relances configurables** — nombre et délai par règle, avec un choix
+  d'évolution du délai entre relances (constant, linéaire ou exponentiel).
+- **Mesure du temps de réponse** — `response_duration` est exposé sur le
+  capteur de statut pour chaque vérification, avec un résumé optionnel par
+  règle au niveau info (entité, résultat, temps de réponse, nombre de
+  tentatives), visible sans activer le débogage.
 - **Escalade configurable** — action de secours optionnelle (activer un
   switch, lancer un script...) déclenchée après échec persistant, avec un
   délai de recharge entre deux escalades et un délai avant de rejouer la

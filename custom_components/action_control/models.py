@@ -47,6 +47,8 @@ class Rule:
     tolerances: dict[str, float] = field(default_factory=dict)
     retries: int = c.DEFAULT_RETRIES
     retry_delay: float = c.DEFAULT_RETRY_DELAY
+    retry_backoff: str = c.DEFAULT_RETRY_BACKOFF
+    log_entity_info: bool = c.DEFAULT_LOG_ENTITY_INFO
 
     # --- movement / change detection ---
     wait_for_change: bool = False
@@ -83,6 +85,8 @@ class Rule:
             c.CONF_TOLERANCES: dict(self.tolerances),
             c.CONF_RETRIES: self.retries,
             c.CONF_RETRY_DELAY: self.retry_delay,
+            c.CONF_RETRY_BACKOFF: self.retry_backoff,
+            c.CONF_LOG_ENTITY_INFO: self.log_entity_info,
             c.CONF_WAIT_FOR_CHANGE: self.wait_for_change,
             c.CONF_CHANGE_ATTRIBUTE: self.change_attribute,
             c.CONF_CHANGE_TIMEOUT: self.change_timeout,
@@ -114,6 +118,8 @@ class Rule:
             tolerances=dict(data.get(c.CONF_TOLERANCES, {})),
             retries=data.get(c.CONF_RETRIES, c.DEFAULT_RETRIES),
             retry_delay=data.get(c.CONF_RETRY_DELAY, c.DEFAULT_RETRY_DELAY),
+            retry_backoff=data.get(c.CONF_RETRY_BACKOFF, c.DEFAULT_RETRY_BACKOFF),
+            log_entity_info=data.get(c.CONF_LOG_ENTITY_INFO, c.DEFAULT_LOG_ENTITY_INFO),
             wait_for_change=data.get(c.CONF_WAIT_FOR_CHANGE, False),
             change_attribute=data.get(c.CONF_CHANGE_ATTRIBUTE),
             change_timeout=data.get(c.CONF_CHANGE_TIMEOUT, c.DEFAULT_CHANGE_TIMEOUT),
@@ -162,3 +168,4 @@ class RuleRunStatus:
     attempt: int = 0
     mismatches: list[str] = field(default_factory=list)
     last_checked: str | None = None
+    response_duration: float | None = None

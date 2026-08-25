@@ -25,6 +25,18 @@ DEFAULT_CHANGE_TIMEOUT = 45.0
 DEFAULT_ESCALATION_COOLDOWN = 300.0
 DEFAULT_ESCALATION_REPLAY_DELAY = 90.0
 
+RETRY_BACKOFF_CONSTANT = "constant"
+RETRY_BACKOFF_LINEAR = "linear"
+RETRY_BACKOFF_EXPONENTIAL = "exponential"
+RETRY_BACKOFF_MODES = (
+    RETRY_BACKOFF_CONSTANT,
+    RETRY_BACKOFF_LINEAR,
+    RETRY_BACKOFF_EXPONENTIAL,
+)
+DEFAULT_RETRY_BACKOFF = RETRY_BACKOFF_CONSTANT
+MAX_RETRY_DELAY = 3600.0  # cap for linear/exponential backoff growth
+DEFAULT_LOG_ENTITY_INFO = False
+
 # rule dict keys (also dataclass field names, kept identical on purpose)
 CONF_RULE_ID = "rule_id"
 CONF_NAME = "name"
@@ -43,6 +55,8 @@ CONF_ATTRIBUTES_TO_CHECK = "attributes_to_check"
 CONF_TOLERANCES = "tolerances"
 CONF_RETRIES = "retries"
 CONF_RETRY_DELAY = "retry_delay"
+CONF_RETRY_BACKOFF = "retry_backoff"
+CONF_LOG_ENTITY_INFO = "log_entity_info"
 
 CONF_WAIT_FOR_CHANGE = "wait_for_change"
 CONF_CHANGE_ATTRIBUTE = "change_attribute"

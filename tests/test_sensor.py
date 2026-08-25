@@ -50,3 +50,5 @@ async def test_sensor_follows_the_rule_status(hass, mock_config_entry):
     assert state.state == "ok"
     assert state.attributes["entity_id"] == "light.kitchen"
     assert state.attributes["expected_state"] == "on"
+    assert isinstance(state.attributes["response_duration"], float)
+    assert state.attributes["response_duration"] >= 0

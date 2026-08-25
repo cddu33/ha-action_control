@@ -1,12 +1,21 @@
 """Integration-style tests: call_service event -> verify/retry/notify flow."""
 from __future__ import annotations
 
+import logging
+
 import pytest
 from homeassistant.core import ServiceCall
 
 from custom_components.action_control import watchdog
-from custom_components.action_control.const import DATA_ENGINE, DOMAIN
-from custom_components.action_control.models import RuleStatus
+from custom_components.action_control.const import (
+    DATA_ENGINE,
+    DOMAIN,
+    MAX_RETRY_DELAY,
+    RETRY_BACKOFF_CONSTANT,
+    RETRY_BACKOFF_EXPONENTIAL,
+    RETRY_BACKOFF_LINEAR,
+)
+from custom_components.action_control.models import Rule, RuleStatus
 from tests.conftest import make_entry, make_light_rule
 
 
@@ -244,3 +253,170 @@ async def test_a_superseded_run_is_dropped(hass, mock_config_entry):
     )
 
     assert calls == []
+
+
+# ---- retry backoff ----
+
+
+def test_compute_retry_delay_constant_ignores_attempt():
+    for attempt in (1, 2, 5):
+        assert watchdog._compute_retry_delay(5, RETRY_BACKOFF_CONSTANT, attempt) == 5
+
+
+def test_compute_retry_delay_linear_scales_with_attempt():
+    assert watchdog._compute_retry_delay(2, RETRY_BACKOFF_LINEAR, 1) == 2
+    assert watchdog._compute_retry_delay(2, RETRY_BACKOFF_LINEAR, 3) == 6
+
+
+def test_compute_retry_delay_exponential_doubles_each_time():
+    assert watchdog._compute_retry_delay(1, RETRY_BACKOFF_EXPONENTIAL, 1) == 1
+    assert watchdog._compute_retry_delay(1, RETRY_BACKOFF_EXPONENTIAL, 2) == 2
+    assert watchdog._compute_retry_delay(1, RETRY_BACKOFF_EXPONENTIAL, 4) == 8
+
+
+def test_compute_retry_delay_is_capped():
+    delay = watchdog._compute_retry_delay(1000, RETRY_BACKOFF_EXPONENTIAL, 10)
+    assert delay == MAX_RETRY_DELAY
+
+
+async def test_exponential_backoff_still_retries_and_notifies(hass):
+    """Backoff mode must not break the existing retry/notify wiring."""
+    rule = make_light_rule(
+        retry_backoff=RETRY_BACKOFF_EXPONENTIAL, retries=3, retry_delay=0.01
+    )
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    calls: list[ServiceCall] = []
+    notifications: list[dict] = []
+    hass.services.async_register(
+        "light", "turn_on", lambda call: calls.append(call)
+    )
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    # initial call + 3 retries
+    assert len(calls) == 4
+    assert len(notifications) == 1
+
+
+# ---- response_duration ----
+
+
+async def test_response_duration_is_recorded(hass, mock_config_entry):
+    engine = await _setup(hass, mock_config_entry)
+
+    hass.states.async_set("light.kitchen", "on", {"brightness": 200, "rgb_color": [1, 2, 3]})
+    hass.services.async_register("light", "turn_on", lambda call: None)
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    rule_id = next(iter(engine.rules))
+    duration = engine.rule_status[rule_id].response_duration
+    assert isinstance(duration, float)
+    assert duration >= 0
+
+
+# ---- domains with nothing meaningful to compare (e.g. scenes) ----
+
+
+async def test_scene_activation_resolves_immediately_without_retry(hass):
+    rule = Rule(
+        name="Scene watchdog",
+        domains=["scene"],
+        services=["turn_on"],
+        retries=2,
+        retry_delay=0,
+        check_delay=0,
+    )
+    entry = make_entry(rule)
+    engine = await _setup(hass, entry)
+
+    hass.states.async_set("scene.movie_night", "2024-01-01T00:00:00+00:00")
+    calls: list[ServiceCall] = []
+    hass.services.async_register("scene", "turn_on", lambda call: calls.append(call))
+
+    await hass.services.async_call(
+        "scene",
+        "turn_on",
+        target={"entity_id": "scene.movie_night"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert len(calls) == 1  # only the original call, no retry
+    rule_id = next(iter(engine.rules))
+    assert engine.rule_status[rule_id].status is RuleStatus.OK
+
+
+# ---- per-rule info-level log ----
+
+
+async def test_log_entity_info_emits_an_info_summary_when_enabled(hass, caplog):
+    rule = make_light_rule(log_entity_info=True)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "on", {"brightness": 200, "rgb_color": [1, 2, 3]})
+    hass.services.async_register("light", "turn_on", lambda call: None)
+
+    with caplog.at_level(
+        logging.INFO, logger="custom_components.action_control.watchdog"
+    ):
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"brightness": 200},
+            target={"entity_id": "light.kitchen"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert "light.kitchen" in caplog.text
+    assert "-> ok" in caplog.text
+
+
+async def test_log_entity_info_is_silent_by_default(hass, caplog):
+    entry = make_entry(make_light_rule())  # log_entity_info defaults to False
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "on", {"brightness": 200, "rgb_color": [1, 2, 3]})
+    hass.services.async_register("light", "turn_on", lambda call: None)
+
+    with caplog.at_level(
+        logging.INFO, logger="custom_components.action_control.watchdog"
+    ):
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"brightness": 200},
+            target={"entity_id": "light.kitchen"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert not any(
+        record.levelno == logging.INFO
+        for record in caplog.records
+        if record.name == "custom_components.action_control.watchdog"
+    )

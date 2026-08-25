@@ -133,9 +133,11 @@ lumières ».
 | Tolérances | `attribut:valeur, attribut2:valeur2` — tolérance numérique par attribut. Les attributs de type liste (comme `rgb_color`) appliquent la tolérance élément par élément. Les entrées illisibles sont ignorées. | aucune (égalité stricte) |
 | Nombre de relances | Combien de fois relancer la commande si la vérification échoue. | 2 (0–10) |
 | Délai entre les relances | Secondes entre chaque relance (mode Délais uniquement). | 2 (0–600) |
+| Évolution du délai entre les relances | Comment le délai entre relances évolue : `constant` (même délai à chaque fois), `linear` (délai × numéro de tentative), ou `exponential` (le délai double à chaque fois, plafonné à 3600 s). Ne concerne que le mode Délais — le mode Mouvement n'a de toute façon pas de délai entre les tentatives. | constant |
 | Attendre un changement | Bascule en mode Mouvement : attend que `change_attribute` change réellement plutôt que de comparer un instantané. | désactivé |
 | Attribut à surveiller | L'attribut surveillé par le mode Mouvement (ex. `current_position`). Indispensable à ce mode : laissé vide, la règle reste en mode Délais. | — |
 | Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. | 45 (1–600) |
+| Journaliser un résumé pour cette règle au niveau info | Si activé, le résultat final de chaque entité (ok/escalated/failed) pour cette règle est aussi journalisé au niveau `info` — entité, résultat, temps de réponse, nombre de tentatives — visible sans activer le debug. Désactivé par défaut ; la trace détaillée pas à pas reste réservée au journal debug. | désactivé |
 
 Quand une règle vise exactement un des domaines `light`, `switch` ou
 `cover`, des valeurs par défaut adaptées sont préremplies
@@ -228,6 +230,17 @@ données de service dont le nom diffère de celui de l'attribut d'état :
 - Un attribut attendu à `None` est toujours considéré comme satisfait ;
   une entité sans état du tout est toujours en écart.
 
+**Domaines sans rien de significatif à comparer** (les scènes, et tout
+couple domaine/service non listé ci-dessus sans attribut configuré non
+plus) obtiennent un état attendu `None` et aucun attribut attendu. La
+vérification immédiate d'une telle règle est alors trivialement satisfaite
+— elle se résout instantanément, sans délai ni relance, dès la première
+exécution. C'est voulu : l'état d'une scène est un horodatage de dernière
+activation, pas une cible à atteindre, donc il n'y a rien à vérifier
+au-delà du fait que l'appel a été accepté. Un preset `scene` (vide, comme
+`switch`) existe surtout pour rendre ce comportement explicite plutôt que
+de le laisser en simple effet de bord implicite.
+
 ## Capteur de statut
 
 Chaque règle dispose d'un capteur de diagnostic portant son nom, regroupé
@@ -245,7 +258,10 @@ dernier résultat connu :
 Les libellés d'état sont traduits (français/anglais), tout comme les
 textes de notification. Attributs : `entity_id`, `expected_state`,
 `expected_attributes`, `actual_state`, `actual_attributes`, `attempt`,
-`mismatches`, `last_checked` (UTC, ISO 8601).
+`mismatches`, `last_checked` (UTC, ISO 8601), `response_duration`
+(secondes écoulées depuis l'émission de la commande, mesurées de
+l'événement `call_service` jusqu'au statut courant — continue d'augmenter
+tant que l'état est `retrying`, se fige une fois la règle résolue).
 
 Le capteur reflète la **dernière** exécution de la règle. Quand une
 commande vise plusieurs entités, toutes sont surveillées, mais le capteur
@@ -301,6 +317,18 @@ l'attribut `current_position`.
 
 Détecte les consignes silencieusement perdues par une liaison radio
 capricieuse.
+
+### Activation de scène
+
+- Domaines : `scene`
+- Services : `turn_on` (ou vide)
+
+Il n'y a rien à vérifier (l'état d'une scène est un horodatage, pas une
+cible), donc la règle se résout immédiatement, sans délai ni relance. La
+configurer reste utile surtout pour la métrique de temps de réponse
+qu'elle enregistre quand même (`response_duration` sur le capteur, et le
+log niveau info si activé), qui sert aussi de confirmation que l'appel
+`scene.turn_on` est bien passé.
 
 ## Journalisation de débogage
 
