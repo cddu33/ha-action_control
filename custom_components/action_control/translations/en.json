@@ -51,9 +51,11 @@
           "tolerances": "Tolerances, as attr:value, attr2:value2",
           "retries": "Number of retries",
           "retry_delay": "Delay between retries (seconds)",
+          "retry_backoff": "Delay growth between retries",
           "wait_for_change": "Wait for an attribute to actually start changing (e.g. position covers) instead of a snapshot check",
           "change_attribute": "Attribute to watch for a change (e.g. current_position)",
-          "change_timeout": "Timeout waiting for the change (seconds)"
+          "change_timeout": "Timeout waiting for the change (seconds)",
+          "log_entity_info": "Log a summary (entity, outcome, response time) for this rule at info level"
         }
       },
       "rule_escalation": {
@@ -113,6 +115,15 @@
           "escalated": "Escalated",
           "failed": "Failed"
         }
+      }
+    }
+  },
+  "selector": {
+    "retry_backoff": {
+      "options": {
+        "constant": "Constant (same delay every time)",
+        "linear": "Linear (delay × attempt number)",
+        "exponential": "Exponential (delay doubles each time)"
       }
     }
   }

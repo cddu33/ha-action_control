@@ -138,6 +138,46 @@ async def test_new_rule_starts_from_the_global_retry_defaults(hass):
     assert rule["retry_delay"] == 7
 
 
+async def test_retry_backoff_and_log_entity_info_are_saved(hass):
+    entry = await _create_entry(hass)
+
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Backoff", "domains": ["switch"]}
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["step_id"] == "rule_verify"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"retry_backoff": "exponential", "log_entity_info": True},
+    )
+    assert result["step_id"] == "rule_escalation"
+
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    rule = next(iter(entry.options[OPT_RULES].values()))
+    assert rule["retry_backoff"] == "exponential"
+    assert rule["log_entity_info"] is True
+
+
+async def test_retry_backoff_and_log_entity_info_default_when_omitted(hass):
+    entry = await _create_entry(hass)
+
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Defaults", "domains": ["switch"]}
+    )
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    rule = next(iter(entry.options[OPT_RULES].values()))
+    assert rule["retry_backoff"] == "constant"
+    assert rule["log_entity_info"] is False
+
+
 async def test_invalid_tolerances_are_rejected(hass):
     entry = await _create_entry(hass)
 

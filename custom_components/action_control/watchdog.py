@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +17,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.script import Script, async_validate_actions_config
 
 from . import comparator, messages
-from .const import DOMAIN
+from .const import DOMAIN, MAX_RETRY_DELAY, RETRY_BACKOFF_EXPONENTIAL, RETRY_BACKOFF_LINEAR
 from .models import ComparisonResult, Mismatch, Rule, RuleRunStatus, RuleStatus
 
 if TYPE_CHECKING:
@@ -29,6 +30,23 @@ _TARGET_KEYS = {"entity_id", "device_id", "area_id", "label_id", "floor_id"}
 
 def _strip_target_keys(service_data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in service_data.items() if k not in _TARGET_KEYS}
+
+
+def _compute_retry_delay(base_delay: float, backoff: str, attempt: int) -> float:
+    """Delay before the next retry, given the backoff mode and attempt number.
+
+    `attempt` is 1 for the first retry. `constant` (the default) reproduces
+    the original fixed-delay behavior exactly. Growth is capped so a high
+    retry count combined with exponential backoff can't produce an
+    absurdly long wait.
+    """
+    if backoff == RETRY_BACKOFF_LINEAR:
+        delay = base_delay * attempt
+    elif backoff == RETRY_BACKOFF_EXPONENTIAL:
+        delay = base_delay * (2 ** (attempt - 1))
+    else:
+        delay = base_delay
+    return min(delay, MAX_RETRY_DELAY)
 
 
 async def _wait_for_attribute_change(
@@ -166,6 +184,10 @@ async def async_run_watchdog(
 ) -> None:
     """Verify a single entity reached the state a service call requested."""
     hass = engine.hass
+    # Measured from function entry, before the lock: this reflects the real
+    # elapsed time since the command was issued, including any time spent
+    # queued behind a still-running check for the same (rule, entity).
+    started_at = time.monotonic()
     lock = engine.lock_for(rule.rule_id, entity_id)
 
     def _superseded() -> bool:
@@ -198,7 +220,9 @@ async def async_run_watchdog(
                 rule.name,
                 entity_id,
             )
-            _publish(engine, rule.rule_id, status, RuleStatus.OK, hass.states.get(entity_id))
+            _publish(
+                engine, rule, status, RuleStatus.OK, hass.states.get(entity_id), started_at
+            )
             return
         _LOGGER.debug(
             "Rule '%s': %s not yet satisfied (mismatches: %s)",
@@ -248,10 +272,11 @@ async def async_run_watchdog(
                 )
                 _publish(
                     engine,
-                    rule.rule_id,
+                    rule,
                     status,
                     RuleStatus.RETRYING,
                     hass.states.get(entity_id),
+                    started_at,
                 )
                 await _reissue_command(engine, domain, service, entity_id, service_data)
                 moved = await _wait_for_attribute_change(
@@ -260,7 +285,7 @@ async def async_run_watchdog(
             final_state = hass.states.get(entity_id)
             if moved:
                 _LOGGER.debug("Rule '%s': %s started moving, verified OK", rule.name, entity_id)
-                _publish(engine, rule.rule_id, status, RuleStatus.OK, final_state)
+                _publish(engine, rule, status, RuleStatus.OK, final_state, started_at)
                 return
             # No movement detected: this is the failure, independent of
             # whether change_attribute happens to be in attributes_to_check
@@ -305,16 +330,18 @@ async def async_run_watchdog(
                     domain,
                     service,
                 )
-                _publish(engine, rule.rule_id, status, RuleStatus.RETRYING, final_state)
+                _publish(engine, rule, status, RuleStatus.RETRYING, final_state, started_at)
                 await _reissue_command(engine, domain, service, entity_id, service_data)
-                await asyncio.sleep(rule.retry_delay)
+                await asyncio.sleep(
+                    _compute_retry_delay(rule.retry_delay, rule.retry_backoff, attempt)
+                )
                 final_state = hass.states.get(entity_id)
                 result = comparator.compare(
                     expected_state, expected_attributes, rule.tolerances, final_state
                 )
             if result.ok:
                 _LOGGER.debug("Rule '%s': %s verified OK after retry", rule.name, entity_id)
-                _publish(engine, rule.rule_id, status, RuleStatus.OK, final_state)
+                _publish(engine, rule, status, RuleStatus.OK, final_state, started_at)
                 return
 
         # Verification failed after all retries (or no movement detected).
@@ -379,7 +406,7 @@ async def async_run_watchdog(
             rule_status.value,
             status.mismatches,
         )
-        _publish(engine, rule.rule_id, status, rule_status, final_state)
+        _publish(engine, rule, status, rule_status, final_state, started_at)
 
         if rule.notify_persistent or rule.notify_service:
             message = _format_message(hass, entity_id, result, escalated)
@@ -387,15 +414,30 @@ async def async_run_watchdog(
             await _notify(engine, rule, entity_id, message)
 
 
+_FINAL_STATUSES = {RuleStatus.OK, RuleStatus.ESCALATED, RuleStatus.FAILED}
+
+
 def _publish(
     engine: ActionControlEngine,
-    rule_id: str,
+    rule: Rule,
     status: RuleRunStatus,
     outcome: RuleStatus,
     state: State | None,
+    started_at: float,
 ) -> None:
     status.status = outcome
     status.actual_state = state.state if state else None
     status.actual_attributes = dict(state.attributes) if state else {}
     status.last_checked = datetime.now(UTC).isoformat()
-    engine.set_status(rule_id, status)
+    status.response_duration = time.monotonic() - started_at
+    engine.set_status(rule.rule_id, status)
+
+    if rule.log_entity_info and outcome in _FINAL_STATUSES:
+        _LOGGER.info(
+            "Rule '%s': %s -> %s in %.2fs (%s attempt(s))",
+            rule.name,
+            status.entity_id,
+            outcome.value,
+            status.response_duration,
+            status.attempt,
+        )

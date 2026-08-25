@@ -51,9 +51,11 @@
           "tolerances": "Tolérances, sous la forme attribut:valeur, attribut2:valeur2",
           "retries": "Nombre de relances",
           "retry_delay": "Délai entre les relances (secondes)",
+          "retry_backoff": "Évolution du délai entre les relances",
           "wait_for_change": "Attendre qu'un attribut commence réellement à changer (ex. volets position) plutôt qu'une vérification instantanée",
           "change_attribute": "Attribut à surveiller pour détecter un changement (ex. current_position)",
-          "change_timeout": "Délai d'attente du changement (secondes)"
+          "change_timeout": "Délai d'attente du changement (secondes)",
+          "log_entity_info": "Journaliser un résumé (entité, résultat, temps de réponse) pour cette règle au niveau info"
         }
       },
       "rule_escalation": {
@@ -113,6 +115,15 @@
           "escalated": "Escaladée",
           "failed": "En échec"
         }
+      }
+    }
+  },
+  "selector": {
+    "retry_backoff": {
+      "options": {
+        "constant": "Constant (même délai à chaque fois)",
+        "linear": "Linéaire (délai × numéro de tentative)",
+        "exponential": "Exponentiel (le délai double à chaque fois)"
       }
     }
   }
