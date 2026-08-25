@@ -1,0 +1,25 @@
+run_rule:
+  fields:
+    rule_sensor:
+      required: true
+      selector:
+        entity:
+          integration: action_control
+          domain: sensor
+    entity_id:
+      required: true
+      selector:
+        entity: {}
+    service_data:
+      required: false
+      selector:
+        object: {}
+
+reset_escalation_cooldown:
+  fields:
+    rule_sensor:
+      required: true
+      selector:
+        entity:
+          integration: action_control
+          domain: sensor

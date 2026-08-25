@@ -150,6 +150,9 @@ from a plain state-only check that you can refine with the fields above.
 | Escalation action | Any Home Assistant action sequence (service call, script, ...) — the same action editor as in automations. An action that fails is logged and does not break the run. | — |
 | Minimum time between two escalations | Cooldown before the same rule may escalate again, in seconds. Counted from the moment the action has run, and shared by every entity of the rule. | 300 (0–86400) |
 | Delay after escalation before replaying the command | Seconds to wait after the escalation action before replaying the original command. | 90 (0–3600) |
+| Entity to verify after the escalation action | Optional. If set, Action Control checks this entity's state after running the escalation action, instead of assuming it worked. | — |
+| State it should reach | The state the entity above must reach (e.g. `on`). Required when an entity is set. | — |
+| Delay before checking it | Seconds to wait before the first check. | 5 (0–600) |
 | Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
 | Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
 
@@ -157,6 +160,15 @@ The cooldown is armed *before* the recovery action runs, and it survives a
 restart, so entities failing at the same moment cannot fire the action
 several times over. Escalation enabled without a configured action does
 nothing and is logged as a warning.
+
+When "Entity to verify" is set, the escalation action is re-run (up to
+"Number of retries" times, with the same delay-growth setting as the
+regular retries) until that entity reaches the expected state, before the
+original command gets replayed. This is for recovery actions that can fail
+too — a gateway restart switch that doesn't always take on the first try,
+for instance. If it's still not confirmed after all retries, the original
+command is replayed anyway (a warning is logged), exactly as if no check
+had been configured.
 
 The failure notification is sent right after the replay, without waiting
 again: it describes the state observed at that moment, and mentions that a
@@ -251,6 +263,27 @@ the rule resolves).
 The sensor reflects the rule's **latest** run. When one command targets
 several entities, they are all watched, but the sensor keeps the last
 update only — the debug log holds the full per-entity picture.
+
+## Services
+
+| Service | Purpose |
+|---|---|
+| `action_control.run_rule` | Test a rule on demand: re-issues a service call on a chosen entity and lets the rule verify it, exactly as if that call had happened normally. Fields: the rule (pick its status sensor), the entity to test, and optional service data — include a `service` key in it to use something other than the rule's first configured service. |
+| `action_control.reset_escalation_cooldown` | Clears a rule's escalation cooldown so it can escalate again immediately, instead of waiting out the configured delay. |
+
+Both take the rule's status sensor as the way to select it, so no rule id
+needs to be typed in by hand.
+
+## Diagnostics and repairs
+
+The integration's entry supports Home Assistant's built-in diagnostics
+download (rules, global settings, and current statuses, with anything that
+looks like a token/password/API key/webhook id redacted) — useful when
+filing a bug report.
+
+If a rule targets an area, label, or device that has since been deleted, a
+repair issue is raised on reload pointing at the rule by name; it clears
+itself once the rule is fixed or the stale target is removed.
 
 ## Recipes
 

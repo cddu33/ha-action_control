@@ -2,13 +2,23 @@
 from __future__ import annotations
 
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import floor_registry as fr
 from homeassistant.helpers import label_registry as lr
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.action_control import matching
 from custom_components.action_control.models import Rule
 from tests.conftest import make_light_rule
+
+
+def _make_device(hass) -> dr.DeviceEntry:
+    entry = MockConfigEntry(domain="test")
+    entry.add_to_hass(hass)
+    return dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={("test", entry.entry_id)}
+    )
 
 
 async def test_resolve_entities_from_area(hass):
@@ -37,6 +47,48 @@ async def test_resolve_entities_from_floor(hass):
     hass.states.async_set(entry.entity_id, "off")
 
     resolved = matching.resolve_target_entities(hass, {"floor_id": [floor.floor_id]})
+    assert entry.entity_id in resolved
+
+
+async def test_resolve_entities_from_device(hass):
+    device = _make_device(hass)
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "light", "test", "device_light", suggested_object_id="device_light"
+    )
+    ent_reg.async_update_entity(entry.entity_id, device_id=device.id)
+    hass.states.async_set(entry.entity_id, "off")
+
+    resolved = matching.resolve_target_entities(hass, {"device_id": [device.id]})
+    assert entry.entity_id in resolved
+
+
+async def test_resolve_entities_from_label(hass):
+    label = lr.async_get(hass).async_create("watched")
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "switch", "test", "labeled_switch", suggested_object_id="labeled"
+    )
+    ent_reg.async_update_entity(entry.entity_id, labels={label.label_id})
+    hass.states.async_set(entry.entity_id, "off")
+
+    resolved = matching.resolve_target_entities(hass, {"label_id": [label.label_id]})
+    assert entry.entity_id in resolved
+
+
+async def test_resolve_entities_from_label_on_device(hass):
+    """A label on the device expands to the device's entities too."""
+    label = lr.async_get(hass).async_create("watched-device")
+    device = _make_device(hass)
+    dr.async_get(hass).async_update_device(device.id, labels={label.label_id})
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "light", "test", "labeled_device_light", suggested_object_id="labeled_device"
+    )
+    ent_reg.async_update_entity(entry.entity_id, device_id=device.id)
+    hass.states.async_set(entry.entity_id, "off")
+
+    resolved = matching.resolve_target_entities(hass, {"label_id": [label.label_id]})
     assert entry.entity_id in resolved
 
 
@@ -101,6 +153,38 @@ async def test_entity_matches_rule_label_filter(hass):
     assert matching.entity_matches_rule(hass, rule, entry.entity_id)
 
     other_rule = Rule(name="r2", domains=["switch"], label_ids=["some-other-label"])
+    assert not matching.entity_matches_rule(hass, other_rule, entry.entity_id)
+
+
+async def test_entity_matches_rule_area_filter(hass):
+    area = ar.async_get(hass).async_get_or_create("Garage")
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "switch", "test", "garage_switch", suggested_object_id="garage"
+    )
+    ent_reg.async_update_entity(entry.entity_id, area_id=area.id)
+    hass.states.async_set(entry.entity_id, "off")
+
+    rule = Rule(name="r", domains=["switch"], area_ids=[area.id])
+    assert matching.entity_matches_rule(hass, rule, entry.entity_id)
+
+    other_rule = Rule(name="r2", domains=["switch"], area_ids=["some-other-area"])
+    assert not matching.entity_matches_rule(hass, other_rule, entry.entity_id)
+
+
+async def test_entity_matches_rule_device_filter(hass):
+    device = _make_device(hass)
+    ent_reg = er.async_get(hass)
+    entry = ent_reg.async_get_or_create(
+        "switch", "test", "device_switch", suggested_object_id="device_switch"
+    )
+    ent_reg.async_update_entity(entry.entity_id, device_id=device.id)
+    hass.states.async_set(entry.entity_id, "off")
+
+    rule = Rule(name="r", domains=["switch"], device_ids=[device.id])
+    assert matching.entity_matches_rule(hass, rule, entry.entity_id)
+
+    other_rule = Rule(name="r2", domains=["switch"], device_ids=["some-other-device"])
     assert not matching.entity_matches_rule(hass, other_rule, entry.entity_id)
 
 

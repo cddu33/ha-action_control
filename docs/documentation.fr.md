@@ -161,6 +161,9 @@ ci-dessus.
 | Action d'escalade | N'importe quelle séquence d'actions Home Assistant (appel de service, script...) — le même éditeur d'action que dans les automations. Une action en erreur est journalisée sans interrompre la vérification. | — |
 | Délai minimum entre deux escalades | Délai de recharge, en secondes, avant qu'une même règle puisse escalader à nouveau. Compté à partir de la fin de l'action, et commun à toutes les entités de la règle. | 300 (0–86400) |
 | Délai après l'escalade avant de rejouer la commande | Secondes d'attente après l'action d'escalade avant de rejouer la commande d'origine. | 90 (0–3600) |
+| Entité à vérifier après l'action de secours | Optionnel. Si renseigné, Action Control vérifie l'état de cette entité après l'action de secours, au lieu de supposer qu'elle a fonctionné. | — |
+| État qu'elle doit atteindre | L'état que l'entité ci-dessus doit atteindre (ex. `on`). Obligatoire si une entité est renseignée. | — |
+| Délai avant de la vérifier | Secondes d'attente avant la première vérification. | 5 (0–600) |
 | Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
 | Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
 
@@ -168,6 +171,17 @@ Le délai de recharge est armé *avant* l'exécution de l'action de secours,
 et il survit à un redémarrage : des entités qui échouent au même moment ne
 peuvent donc pas déclencher l'action plusieurs fois. Une escalade activée
 sans action configurée ne fait rien et est journalisée en avertissement.
+
+Quand « Entité à vérifier » est renseignée, l'action de secours est
+relancée (jusqu'au nombre de relances configuré, avec la même évolution de
+délai que les relances normales) jusqu'à ce que cette entité atteigne
+l'état attendu, avant de rejouer la commande d'origine. Utile pour les
+actions de secours qui peuvent elles-mêmes échouer — un switch de
+redémarrage de passerelle qui ne fonctionne pas toujours du premier coup,
+par exemple. Si l'état attendu n'est toujours pas atteint après toutes les
+relances, la commande d'origine est quand même rejouée (un avertissement
+est journalisé), exactement comme si aucune vérification n'avait été
+configurée.
 
 La notification d'échec part juste après le rejeu, sans nouvelle attente :
 elle décrit donc l'état observé à ce moment-là et signale qu'une action de
@@ -267,6 +281,28 @@ Le capteur reflète la **dernière** exécution de la règle. Quand une
 commande vise plusieurs entités, toutes sont surveillées, mais le capteur
 ne conserve que la dernière mise à jour — le journal de débogage donne le
 détail entité par entité.
+
+## Services
+
+| Service | Utilité |
+|---|---|
+| `action_control.run_rule` | Teste une règle à la demande : rejoue un appel de service sur une entité choisie et laisse la règle le vérifier, exactement comme si cet appel avait eu lieu normalement. Champs : la règle (via son capteur de statut), l'entité à tester, et des données de service optionnelles — y inclure une clé `service` pour utiliser autre chose que le premier service configuré de la règle. |
+| `action_control.reset_escalation_cooldown` | Efface le délai de recharge d'une règle pour qu'elle puisse escalader à nouveau immédiatement, sans attendre le délai configuré. |
+
+Les deux utilisent le capteur de statut de la règle pour la sélectionner,
+donc aucun identifiant de règle n'est à saisir à la main.
+
+## Diagnostics et réparations
+
+L'entrée de l'intégration prend en charge le téléchargement de diagnostics
+intégré à Home Assistant (règles, paramètres globaux et statuts courants,
+avec tout ce qui ressemble à un token/mot de passe/clé API/webhook id
+masqué) — utile pour joindre à un rapport de bug.
+
+Si une règle cible une zone, une étiquette ou un appareil qui a depuis été
+supprimé, une réparation est signalée au rechargement, nommant la règle
+concernée ; elle disparaît d'elle-même une fois la règle corrigée ou la
+cible manquante retirée.
 
 ## Exemples
 

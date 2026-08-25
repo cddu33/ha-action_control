@@ -66,6 +66,9 @@
           "escalation_action": "Action d'escalade",
           "escalation_cooldown": "Délai minimum entre deux escalades (secondes)",
           "escalation_replay_delay": "Délai après l'escalade avant de rejouer la commande (secondes)",
+          "escalation_check_entity_id": "Entité à vérifier après l'action de secours (optionnel)",
+          "escalation_check_state": "État qu'elle doit atteindre (ex. on)",
+          "escalation_check_delay": "Délai avant de la vérifier (secondes)",
           "notify_persistent": "Notifier via une notification persistante",
           "notify_service": "Notifier également via ce service notify"
         }
@@ -125,6 +128,42 @@
         "linear": "Linéaire (délai × numéro de tentative)",
         "exponential": "Exponentiel (le délai double à chaque fois)"
       }
+    }
+  },
+  "services": {
+    "run_rule": {
+      "name": "Tester une règle",
+      "description": "Teste une règle à la demande : rejoue le service donné sur l'entité et laisse la règle le vérifier, exactement comme si le service avait été appelé normalement.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Règle",
+          "description": "Le capteur de statut de la règle."
+        },
+        "entity_id": {
+          "name": "Entité",
+          "description": "L'entité sur laquelle tester la règle."
+        },
+        "service_data": {
+          "name": "Données du service",
+          "description": "Données de l'appel de service. Inclure une clé \"service\" pour remplacer le service par défaut de la règle."
+        }
+      }
+    },
+    "reset_escalation_cooldown": {
+      "name": "Réinitialiser le cooldown d'escalade",
+      "description": "Efface le cooldown d'escalade d'une règle pour qu'elle puisse escalader à nouveau immédiatement.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Règle",
+          "description": "Le capteur de statut de la règle."
+        }
+      }
+    }
+  },
+  "issues": {
+    "stale_target": {
+      "title": "Action Control : la règle cible une zone, une étiquette ou un appareil manquant",
+      "description": "La règle « {rule} » cible une ou plusieurs zones, étiquettes ou appareils qui n'existent plus. Elle ne correspondra à rien tant que vous n'aurez pas mis à jour ou retiré cette cible dans l'étape de ciblage de la règle."
     }
   }
 }

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -70,6 +71,18 @@ async def _wait_for_attribute_change(
         unsub()
 
 
+async def _safe_call(
+    action: Callable[[], Awaitable[None]], log_msg: str, *log_args: Any
+) -> bool:
+    """Run a fire-and-forget action; a failure must not kill the watchdog run."""
+    try:
+        await action()
+    except Exception:  # noqa: BLE001 - downstream integrations/user actions may raise anything
+        _LOGGER.exception(log_msg, *log_args)
+        return False
+    return True
+
+
 async def _reissue_command(
     engine: ActionControlEngine,
     domain: str,
@@ -77,34 +90,75 @@ async def _reissue_command(
     entity_id: str,
     service_data: dict[str, Any],
 ) -> bool:
-    """Re-send the command for one entity. A failure must not kill the run."""
     data = _strip_target_keys(service_data)
     ctx = engine.contexts.new_context()
-    try:
-        await engine.hass.services.async_call(
+    return await _safe_call(
+        lambda: engine.hass.services.async_call(
             domain, service, data, target={"entity_id": entity_id}, context=ctx
-        )
-    except Exception:  # noqa: BLE001 - the target integration may raise anything
-        _LOGGER.exception(
-            "Action Control: re-issuing %s.%s on %s failed", domain, service, entity_id
-        )
-        return False
-    return True
+        ),
+        "Action Control: re-issuing %s.%s on %s failed",
+        domain,
+        service,
+        entity_id,
+    )
 
 
 async def _run_escalation(
     engine: ActionControlEngine, hass: HomeAssistant, rule: Rule
-) -> None:
+) -> bool:
     if not rule.escalation_action:
-        return
-    try:
+        return False
+
+    async def _run() -> None:
         validated = await async_validate_actions_config(hass, rule.escalation_action)
         script = Script(hass, validated, f"{DOMAIN}_{rule.rule_id}_escalation", DOMAIN)
-        ctx = engine.contexts.new_context()
-        await script.async_run(context=ctx)
-    except Exception:  # noqa: BLE001 - a bad user-configured action must not crash the watchdog
-        _LOGGER.exception(
-            "Action Control: escalation action for rule '%s' failed", rule.name
+        await script.async_run(context=engine.contexts.new_context())
+
+    return await _safe_call(
+        _run, "Action Control: escalation action for rule '%s' failed", rule.name
+    )
+
+
+def _escalation_check_ok(hass: HomeAssistant, entity_id: str, expected_state: str) -> bool:
+    state = hass.states.get(entity_id)
+    return state is not None and state.state == expected_state
+
+
+async def _verify_escalation(
+    engine: ActionControlEngine, hass: HomeAssistant, rule: Rule
+) -> None:
+    """Confirm the escalation action worked, re-running it if it didn't.
+
+    Never blocks the replay that follows: a failure here is logged, not
+    raised, so the original command still gets replayed as a last resort.
+    """
+    await asyncio.sleep(rule.escalation_check_delay)
+    ok = _escalation_check_ok(hass, rule.escalation_check_entity_id, rule.escalation_check_state)
+    attempt = 0
+    while not ok and attempt < rule.retries:
+        attempt += 1
+        _LOGGER.debug(
+            "Rule '%s': escalation target %s not yet '%s', retry %s/%s",
+            rule.name,
+            rule.escalation_check_entity_id,
+            rule.escalation_check_state,
+            attempt,
+            rule.retries,
+        )
+        await _run_escalation(engine, hass, rule)
+        await asyncio.sleep(_compute_retry_delay(rule.retry_delay, rule.retry_backoff, attempt))
+        ok = _escalation_check_ok(
+            hass, rule.escalation_check_entity_id, rule.escalation_check_state
+        )
+    if ok:
+        _LOGGER.debug("Rule '%s': escalation action verified OK", rule.name)
+    else:
+        _LOGGER.warning(
+            "Rule '%s': escalation target %s never reached '%s' after %s attempt(s)",
+            rule.name,
+            rule.escalation_check_entity_id,
+            rule.escalation_check_state,
+            attempt,
         )
 
 
@@ -138,8 +192,8 @@ async def _notify(
     ctx = engine.contexts.new_context()
     title = f"Action Control: {rule.name}"
     if rule.notify_persistent:
-        try:
-            await hass.services.async_call(
+        await _safe_call(
+            lambda: hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
@@ -150,25 +204,22 @@ async def _notify(
                     "notification_id": f"{DOMAIN}_{rule.rule_id}_{entity_id}",
                 },
                 context=ctx,
-            )
-        except Exception:  # noqa: BLE001 - notifying must never break the run
-            _LOGGER.exception(
-                "Action Control: persistent notification for rule '%s' failed", rule.name
-            )
+            ),
+            "Action Control: persistent notification for rule '%s' failed",
+            rule.name,
+        )
     if rule.notify_service:
-        try:
-            await hass.services.async_call(
+        await _safe_call(
+            lambda: hass.services.async_call(
                 "notify",
                 rule.notify_service,
                 {"title": title, "message": message},
                 context=ctx,
-            )
-        except Exception:  # noqa: BLE001 - a missing/broken notify service is the user's
-            _LOGGER.exception(
-                "Action Control: notify.%s for rule '%s' failed",
-                rule.notify_service,
-                rule.name,
-            )
+            ),
+            "Action Control: notify.%s for rule '%s' failed",
+            rule.notify_service,
+            rule.name,
+        )
 
 
 async def async_run_watchdog(
@@ -358,6 +409,8 @@ async def async_run_watchdog(
                 entity_id,
             )
             await _run_escalation(engine, hass, rule)
+            if rule.escalation_check_entity_id:
+                await _verify_escalation(engine, hass, rule)
             await asyncio.sleep(rule.escalation_replay_delay)
             _LOGGER.debug(
                 "Rule '%s': replaying %s.%s on %s after escalation",

@@ -41,7 +41,12 @@ Assistant's `Context`.
 - **Configurable escalation** — an optional recovery action (turn on a
   switch, run a script, ...) triggered after persistent failure, with a
   cooldown between escalations and a delay before replaying the original
-  command.
+  command. Optionally verified: the recovery action can be re-run until a
+  chosen entity confirms it actually worked, before the original command
+  is replayed.
+- **On-demand services** — `run_rule` to test a rule against a real service
+  call without waiting for one to happen, and `reset_escalation_cooldown`
+  to let a rule escalate again right away.
 - **Notifications** — persistent notification and/or a `notify.*` service
   of your choice, per rule.
 - **Built-in anti-loop protection** — every command the integration
@@ -52,6 +57,9 @@ Assistant's `Context`.
   (add/edit/delete rules, global settings). No YAML required.
 - **Per-rule status sensor** — a diagnostic sensor (`ok` / `retrying` /
   `escalated` / `failed`) with the details of the last check.
+- **Diagnostics and repairs** — a downloadable diagnostics dump for bug
+  reports, and a repair issue when a rule targets an area/label/device
+  that no longer exists.
 - **Rules can be paused** — a rule can be disabled without deleting it.
 - **Bilingual UI** — English and French.
 
