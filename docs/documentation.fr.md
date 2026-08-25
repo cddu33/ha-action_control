@@ -57,6 +57,37 @@ correspondant :
 6. **Notifie** (notification persistante et/ou service `notify.*`) en
    précisant ce qui était attendu par rapport à ce qui a été observé.
 
+```mermaid
+flowchart TD
+    A["Événement call_service"] --> B{"Contexte auto-émis ?"}
+    B -->|oui| Z1["Ignoré — anti-boucle"]
+    B -->|non| C{"Correspond à une règle ?"}
+    C -->|non| Z2["Rien à surveiller"]
+    C -->|oui| D["Résolution des entités cibles,<br/>calcul de l'état attendu"]
+    D --> E{"Déjà satisfait ?"}
+    E -->|oui| OK["ok"]
+    E -->|non| F{"Mode de vérification"}
+    F -->|Délai| G["Attendre check_delay,<br/>comparer avec tolérance"]
+    F -->|Mouvement| H["Attendre jusqu'à change_timeout que<br/>change_attribute commence à bouger"]
+    G --> I{"Satisfait ?"}
+    H --> I
+    I -->|oui| OK
+    I -->|non| J{"Relances restantes ?"}
+    J -->|oui| K["Réémission de la commande<br/>délai selon le mode de backoff"]
+    K --> F
+    J -->|non| L{"Escalade activée,<br/>recharge écoulée ?"}
+    L -->|non| FAIL["failed"]
+    L -->|oui| M["Exécution de l'action de secours"]
+    M --> N{"La vérifier ?"}
+    N -->|oui| O["Relancer jusqu'à ce que l'entité<br/>atteigne l'état attendu"]
+    N -->|non| P["Attendre escalation_replay_delay"]
+    O --> P
+    P --> Q["Rejeu de la commande d'origine"]
+    Q --> ESC["escalated"]
+    FAIL --> R["Notification"]
+    ESC --> R
+```
+
 Chaque relance réémet la commande pour cette seule entité : les clés de
 ciblage d'origine (`entity_id`, `device_id`, `area_id`, `label_id`,
 `floor_id`) sont remplacées par l'`entity_id` concerné, le reste des
@@ -85,6 +116,21 @@ redémarrage de Home Assistant la vide) — il n'y a jamais rien de
 significatif à conserver d'un redémarrage à l'autre, puisqu'un redémarrage
 arrête de toute façon toute vérification en cours.
 
+```mermaid
+sequenceDiagram
+    participant U as Automation, personne, ...
+    participant HA as Bus Home Assistant
+    participant AC as Action Control
+    U->>HA: light.turn_on
+    HA-->>AC: Événement call_service
+    AC->>AC: Contexte inconnu — entité surveillée
+    Note over AC: La lumière reste éteinte : échec
+    AC->>AC: Création et mémorisation d'un Context
+    AC->>HA: light.turn_on (relance, avec ce Context)
+    HA-->>AC: Événement call_service
+    AC->>AC: Contexte connu — ignoré, aucune nouvelle vérification
+```
+
 ## Configurer les règles
 
 Toute la configuration se fait depuis le bouton **Configurer** de
@@ -93,10 +139,34 @@ menu propose :
 
 | Entrée de menu | Rôle |
 |---|---|
-| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → vérification et relances → escalade et notifications. |
+| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → ce que la règle doit faire → les réglages correspondants. |
 | Modifier une règle | Le même assistant, prérempli avec la règle choisie. |
 | Supprimer une règle | Demande confirmation, puis supprime la règle et son capteur. |
 | Paramètres globaux | Interrupteur général et valeurs par défaut, voir [Paramètres globaux](#paramètres-globaux). |
+
+L'assistant ne demande que ce que la règle utilise réellement : vous cochez
+les fonctionnalités voulues à l'étape *ce qu'elle doit faire*, et les
+étapes suivantes n'affichent que les réglages correspondants. Une règle qui
+se contente de relancer une commande tient en quatre étapes courtes ;
+l'escalade et sa vérification n'ajoutent des étapes que si vous les
+demandez.
+
+```mermaid
+flowchart TD
+    A["Ciblage<br/>nom, domaines, filtres"] --> B["Services"]
+    B --> C["Ce qu'elle doit faire<br/>mode, escalade, journal, notifications"]
+    C --> D{"Mode de vérification"}
+    D -->|Délai| E["Vérification et relances<br/>+ délai avant la 1re vérification"]
+    D -->|Mouvement| F["Vérification et relances<br/>+ attribut à surveiller, délai d'attente"]
+    E --> G{"Escalade cochée ?"}
+    F --> G
+    G -->|non| Z["Règle enregistrée"]
+    G -->|oui| H["Action de secours<br/>action, recharge, délai de rejeu"]
+    H --> I{"Vérifier l'action de secours ?"}
+    I -->|non| Z
+    I -->|oui| J["Vérification de l'action de secours<br/>entité, état attendu, délai"]
+    J --> Z
+```
 
 Une seule instance de l'intégration est nécessaire — une seconde tentative
 d'ajout est volontairement refusée. Enregistrer une modification recharge
@@ -124,20 +194,30 @@ motif/pièce/étiquette/appareil correspond à toutes les entités du/des
 domaine(s)/service(s) choisis — par exemple « surveiller toutes les
 lumières ».
 
+### Ce qu'elle doit faire
+
+L'étape qui décide des étapes suivantes à remplir.
+
+| Champ | Description | Par défaut |
+|---|---|---|
+| Comment vérifier la commande | **Délai** — attendre, puis comparer l'état et les attributs. **Mouvement** — attendre qu'un attribut commence réellement à changer, pour ce qui se déplace (volets). Ce choix détermine les champs demandés à l'étape de vérification. | Délai (Mouvement pour `cover`) |
+| Déclencher une action de secours en cas d'échec persistant | Décoché, les étapes d'action de secours sont entièrement sautées. | désactivé |
+| Journaliser un résumé pour cette règle au niveau info | Si activé, le résultat final de chaque entité (ok/escalated/failed) pour cette règle est aussi journalisé au niveau `info` — entité, résultat, temps de réponse, nombre de tentatives — visible sans activer le debug. Désactivé par défaut ; la trace détaillée pas à pas reste réservée au journal debug. | désactivé |
+| Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
+| Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
+
 ### Vérification
 
 | Champ | Description | Par défaut (plage) |
 |---|---|---|
-| Délai avant la première vérification | Secondes d'attente après la commande avant la première comparaison (mode Délais uniquement). | 2 (0–120) |
+| Délai avant la première vérification | Secondes d'attente après la commande avant la première comparaison. **Mode Délai uniquement.** | 2 (0–120) |
 | Attributs à vérifier | Attributs comparés en plus de l'état (ex. `brightness`, `rgb_color`). Seuls ceux réellement présents dans l'appel de service sont comparés. | aucun |
 | Tolérances | `attribut:valeur, attribut2:valeur2` — tolérance numérique par attribut. Les attributs de type liste (comme `rgb_color`) appliquent la tolérance élément par élément. Les entrées illisibles sont ignorées. | aucune (égalité stricte) |
 | Nombre de relances | Combien de fois relancer la commande si la vérification échoue. | 2 (0–10) |
-| Délai entre les relances | Secondes entre chaque relance (mode Délais uniquement). | 2 (0–600) |
-| Évolution du délai entre les relances | Comment le délai entre relances évolue : `constant` (même délai à chaque fois), `linear` (délai × numéro de tentative), ou `exponential` (le délai double à chaque fois, plafonné à 3600 s). Ne concerne que le mode Délais — le mode Mouvement n'a de toute façon pas de délai entre les tentatives. | constant |
-| Attendre un changement | Bascule en mode Mouvement : attend que `change_attribute` change réellement plutôt que de comparer un instantané. | désactivé |
-| Attribut à surveiller | L'attribut surveillé par le mode Mouvement (ex. `current_position`). Indispensable à ce mode : laissé vide, la règle reste en mode Délais. | — |
-| Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. | 45 (1–600) |
-| Journaliser un résumé pour cette règle au niveau info | Si activé, le résultat final de chaque entité (ok/escalated/failed) pour cette règle est aussi journalisé au niveau `info` — entité, résultat, temps de réponse, nombre de tentatives — visible sans activer le debug. Désactivé par défaut ; la trace détaillée pas à pas reste réservée au journal debug. | désactivé |
+| Délai entre les relances | Secondes entre chaque relance (mode Délai uniquement). | 2 (0–600) |
+| Évolution du délai entre les relances | Comment le délai entre relances évolue : `constant` (même délai à chaque fois), `linear` (délai × numéro de tentative), ou `exponential` (le délai double à chaque fois, plafonné à 3600 s). Ne concerne que le mode Délai — le mode Mouvement n'a de toute façon pas de délai entre les tentatives. | constant |
+| Attribut à surveiller | L'attribut surveillé par le mode Mouvement (ex. `current_position`). **Mode Mouvement uniquement**, et obligatoire — l'étape ne se valide pas sans lui. | — |
+| Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. **Mode Mouvement uniquement.** | 45 (1–600) |
 
 Quand une règle vise exactement un des domaines `light`, `switch` ou
 `cover`, des valeurs par défaut adaptées sont préremplies
@@ -153,35 +233,42 @@ Tout autre domaine — ou une règle visant plusieurs domaines à la fois —
 part d'une simple vérification d'état, à affiner avec les champs
 ci-dessus.
 
-### Escalade et notifications
+### Action de secours
+
+Demandée uniquement si *Déclencher une action de secours* est coché.
 
 | Champ | Description | Par défaut (plage) |
 |---|---|---|
-| Activer l'action d'escalade | Active l'étape d'action de secours après échec persistant. | désactivé |
 | Action d'escalade | N'importe quelle séquence d'actions Home Assistant (appel de service, script...) — le même éditeur d'action que dans les automations. Une action en erreur est journalisée sans interrompre la vérification. | — |
 | Délai minimum entre deux escalades | Délai de recharge, en secondes, avant qu'une même règle puisse escalader à nouveau. Compté à partir de la fin de l'action, et commun à toutes les entités de la règle. | 300 (0–86400) |
 | Délai après l'escalade avant de rejouer la commande | Secondes d'attente après l'action d'escalade avant de rejouer la commande d'origine. | 90 (0–3600) |
-| Entité à vérifier après l'action de secours | Optionnel. Si renseigné, Action Control vérifie l'état de cette entité après l'action de secours, au lieu de supposer qu'elle a fonctionné. | — |
-| État qu'elle doit atteindre | L'état que l'entité ci-dessus doit atteindre (ex. `on`). Obligatoire si une entité est renseignée. | — |
-| Délai avant de la vérifier | Secondes d'attente avant la première vérification. | 5 (0–600) |
-| Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
-| Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
+| Vérifier que l'action de secours a fonctionné | Ajoute une étape pour contrôler que l'action de secours a bien pris effet, au lieu de le supposer. | désactivé |
 
 Le délai de recharge est armé *avant* l'exécution de l'action de secours,
 et il survit à un redémarrage : des entités qui échouent au même moment ne
 peuvent donc pas déclencher l'action plusieurs fois. Une escalade activée
 sans action configurée ne fait rien et est journalisée en avertissement.
 
-Quand « Entité à vérifier » est renseignée, l'action de secours est
-relancée (jusqu'au nombre de relances configuré, avec la même évolution de
-délai que les relances normales) jusqu'à ce que cette entité atteigne
-l'état attendu, avant de rejouer la commande d'origine. Utile pour les
-actions de secours qui peuvent elles-mêmes échouer — un switch de
-redémarrage de passerelle qui ne fonctionne pas toujours du premier coup,
-par exemple. Si l'état attendu n'est toujours pas atteint après toutes les
-relances, la commande d'origine est quand même rejouée (un avertissement
-est journalisé), exactement comme si aucune vérification n'avait été
-configurée.
+### Vérification de l'action de secours
+
+Demandée uniquement si *Vérifier que l'action de secours a fonctionné* est
+coché.
+
+| Champ | Description | Par défaut (plage) |
+|---|---|---|
+| Entité à vérifier après l'action de secours | L'entité dont l'état prouve que l'action de secours a fonctionné. Obligatoire. | — |
+| État qu'elle doit atteindre | L'état que cette entité doit atteindre (ex. `on`). Obligatoire. | — |
+| Délai avant de la vérifier | Secondes d'attente avant la première vérification. | 5 (0–600) |
+
+L'action de secours est relancée (jusqu'au nombre de relances configuré,
+avec la même évolution de délai que les relances normales) jusqu'à ce que
+cette entité atteigne l'état attendu, avant de rejouer la commande
+d'origine. Utile pour les actions de secours qui peuvent elles-mêmes
+échouer — un switch de redémarrage de passerelle qui ne fonctionne pas
+toujours du premier coup, par exemple. Si l'état attendu n'est toujours pas
+atteint après toutes les relances, la commande d'origine est quand même
+rejouée (un avertissement est journalisé), exactement comme si aucune
+vérification n'avait été configurée.
 
 La notification d'échec part juste après le rejeu, sans nouvelle attente :
 elle décrit donc l'état observé à ce moment-là et signale qu'une action de

@@ -17,6 +17,27 @@ if the problem persists — all without writing any YAML, and without risk of
 a retry loop thanks to a built-in anti-loop mechanism based on Home
 Assistant's `Context`.
 
+```mermaid
+flowchart TD
+    A["call_service event"] --> B{"Already satisfied?"}
+    B -->|yes| OK["ok"]
+    B -->|no| C{"Verification mode"}
+    C -->|Delay| D["Wait, then compare<br/>state and attributes"]
+    C -->|Movement| E["Wait for the attribute<br/>to actually start moving"]
+    D --> F{"Satisfied?"}
+    E --> F
+    F -->|yes| OK
+    F -->|no| G{"Retries left?"}
+    G -->|yes| H["Re-issue the command"]
+    H --> C
+    G -->|no| I{"Recovery action?"}
+    I -->|no| FAIL["failed"]
+    I -->|yes| J["Run it, optionally verify it,<br/>then replay the command"]
+    J --> ESC["escalated"]
+    FAIL --> K["Notify"]
+    ESC --> K
+```
+
 ## Features
 
 - **Generic command verification** — watches any domain/service call, not
@@ -94,19 +115,21 @@ Settings → Devices & services → Add integration → *Action Control*. All
 configuration (watchdog rules, escalation options, notifications) is then
 done from the integration's *Configure* button — no YAML needed.
 
-Each rule defines:
+The wizard asks for the capabilities you want first, then only shows the
+settings those choices actually need:
 
 - **Targeting**: domain(s), service(s), `entity_id` pattern, name pattern,
   areas, labels, devices.
-- **Verification**: delay before the first check, attributes to check with
-  tolerance (e.g. `brightness`, `rgb_color`), retry count and delay
-  between retries. The `light`, `switch`, and `cover` domains come with
-  sensible defaults pre-filled.
-- **Escalation** (optional): a recovery action (e.g. turning on a switch,
-  running a script) triggered when verification keeps failing, with a
-  minimum delay between two escalations.
-- **Notifications**: persistent notification and/or a `notify.*` service
-  of your choice.
+- **What it should do**: how to verify (delay or movement), whether to run
+  a recovery action, logging and notifications.
+- **Verification**: attributes to check with tolerance (e.g. `brightness`,
+  `rgb_color`), retry count and delay growth — plus the delay before the
+  first check, or the attribute to watch, depending on the mode. The
+  `light`, `switch`, and `cover` domains come with sensible defaults
+  pre-filled.
+- **Recovery action** (only if ticked): what to run when verification keeps
+  failing, with a minimum delay between two escalations — and optionally an
+  entity to check to confirm it worked.
 
 See the [full documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md) for a field-by-field
 reference, ready-to-use recipes, debug logging, and known limitations.

@@ -242,6 +242,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         if user_input is None and self._editing_rule_id is None:
             self._draft = {}
 
+        errors: dict[str, str] = {}
         if user_input is not None:
             self._draft.update(
                 {
@@ -255,7 +256,11 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_DEVICE_IDS: user_input.get(c.CONF_DEVICE_IDS, []),
                 }
             )
-            return await self.async_step_add_rule_services()
+            # vol.Required only guarantees the key is present, not that the
+            # list has anything in it -- a rule with no domain never matches.
+            if self._draft[c.CONF_DOMAINS]:
+                return await self.async_step_add_rule_services()
+            errors[c.CONF_DOMAINS] = "domains_required"
 
         known_domains = sorted(
             {entity_id.split(".", 1)[0] for entity_id in self.hass.states.async_entity_ids()}
@@ -305,7 +310,7 @@ class ActionControlOptionsFlow(OptionsFlow):
                 ): DeviceSelector(DeviceSelectorConfig(multiple=True)),
             }
         )
-        return self.async_show_form(step_id="add_rule", data_schema=schema)
+        return self.async_show_form(step_id="add_rule", data_schema=schema, errors=errors)
 
     # ---- add / edit: page 1b - which services, now that domains are known ----
 
@@ -314,7 +319,7 @@ class ActionControlOptionsFlow(OptionsFlow):
     ) -> Any:
         if user_input is not None:
             self._draft[c.CONF_SERVICES] = user_input.get(c.CONF_SERVICES, [])
-            return await self.async_step_rule_verify()
+            return await self.async_step_rule_features()
 
         # Populated from the services Home Assistant actually registers for
         # the domain(s) just chosen (union across domains), so the picker
@@ -345,19 +350,97 @@ class ActionControlOptionsFlow(OptionsFlow):
             description_placeholders={"domains": ", ".join(domains)},
         )
 
-    # ---- add / edit: page 2 - verification ----
+    # ---- add / edit: page 2 - which capabilities this rule uses ----
+
+    def _preset_for_draft(self) -> dict[str, Any]:
+        """Domain defaults, when the rule watches exactly one known domain."""
+        domains = self._draft.get(c.CONF_DOMAINS, [])
+        if len(domains) == 1 and domains[0] in DOMAIN_PRESETS:
+            return DOMAIN_PRESETS[domains[0]]
+        return {}
+
+    async def async_step_rule_features(
+        self, user_input: dict[str, Any] | None = None
+    ) -> Any:
+        """Pick the capabilities, so later steps only ask what's relevant."""
+        if user_input is not None:
+            mode = user_input[c.CONF_VERIFICATION_MODE]
+            self._draft.update(
+                {
+                    c.CONF_VERIFICATION_MODE: mode,
+                    c.CONF_WAIT_FOR_CHANGE: mode == c.VERIFICATION_MODE_MOVEMENT,
+                    c.CONF_ESCALATION_ENABLED: user_input[c.CONF_ESCALATION_ENABLED],
+                    c.CONF_LOG_ENTITY_INFO: user_input[c.CONF_LOG_ENTITY_INFO],
+                    c.CONF_NOTIFY_PERSISTENT: user_input[c.CONF_NOTIFY_PERSISTENT],
+                    c.CONF_NOTIFY_SERVICE: user_input.get(c.CONF_NOTIFY_SERVICE) or None,
+                }
+            )
+            return await self.async_step_rule_verify()
+
+        preset = self._preset_for_draft()
+        wait_for_change = self._draft.get(
+            c.CONF_WAIT_FOR_CHANGE, preset.get("wait_for_change", False)
+        )
+        notify_services = sorted(self.hass.services.async_services().get("notify", {}))
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    c.CONF_VERIFICATION_MODE,
+                    default=(
+                        c.VERIFICATION_MODE_MOVEMENT
+                        if wait_for_change
+                        else c.VERIFICATION_MODE_DELAY
+                    ),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(c.VERIFICATION_MODES),
+                        translation_key=c.CONF_VERIFICATION_MODE,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    c.CONF_ESCALATION_ENABLED,
+                    default=self._draft.get(c.CONF_ESCALATION_ENABLED, False),
+                ): BooleanSelector(),
+                vol.Required(
+                    c.CONF_LOG_ENTITY_INFO,
+                    default=self._draft.get(
+                        c.CONF_LOG_ENTITY_INFO, c.DEFAULT_LOG_ENTITY_INFO
+                    ),
+                ): BooleanSelector(),
+                vol.Required(
+                    c.CONF_NOTIFY_PERSISTENT,
+                    default=self._draft.get(c.CONF_NOTIFY_PERSISTENT, True),
+                ): BooleanSelector(),
+                vol.Optional(
+                    c.CONF_NOTIFY_SERVICE,
+                    default=self._draft.get(c.CONF_NOTIFY_SERVICE) or "",
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=notify_services,
+                        custom_value=True,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="rule_features", data_schema=schema)
+
+    # ---- add / edit: page 3 - verification ----
 
     async def async_step_rule_verify(
         self, user_input: dict[str, Any] | None = None
     ) -> Any:
         errors: dict[str, str] = {}
         tolerances_text: str | None = None
+        movement = (
+            self._draft.get(c.CONF_VERIFICATION_MODE) == c.VERIFICATION_MODE_MOVEMENT
+        )
 
         if user_input is not None:
             tolerances, invalid = _parse_tolerances(user_input.get(c.CONF_TOLERANCES))
             self._draft.update(
                 {
-                    c.CONF_CHECK_DELAY: user_input[c.CONF_CHECK_DELAY],
                     c.CONF_ATTRIBUTES_TO_CHECK: user_input.get(
                         c.CONF_ATTRIBUTES_TO_CHECK, []
                     ),
@@ -365,23 +448,31 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_RETRIES: user_input[c.CONF_RETRIES],
                     c.CONF_RETRY_DELAY: user_input[c.CONF_RETRY_DELAY],
                     c.CONF_RETRY_BACKOFF: user_input[c.CONF_RETRY_BACKOFF],
-                    c.CONF_WAIT_FOR_CHANGE: user_input[c.CONF_WAIT_FOR_CHANGE],
-                    c.CONF_CHANGE_ATTRIBUTE: user_input.get(c.CONF_CHANGE_ATTRIBUTE)
-                    or None,
-                    c.CONF_CHANGE_TIMEOUT: user_input[c.CONF_CHANGE_TIMEOUT],
-                    c.CONF_LOG_ENTITY_INFO: user_input[c.CONF_LOG_ENTITY_INFO],
                 }
             )
-            if not invalid:
-                return await self.async_step_rule_escalation()
-            errors[c.CONF_TOLERANCES] = "invalid_tolerances"
-            tolerances_text = user_input.get(c.CONF_TOLERANCES) or ""
+            if movement:
+                change_attribute = user_input.get(c.CONF_CHANGE_ATTRIBUTE) or None
+                self._draft.update(
+                    {
+                        c.CONF_CHANGE_ATTRIBUTE: change_attribute,
+                        c.CONF_CHANGE_TIMEOUT: user_input[c.CONF_CHANGE_TIMEOUT],
+                    }
+                )
+                # Movement mode is a no-op without it: the rule would silently
+                # fall back to a snapshot comparison.
+                if not change_attribute:
+                    errors[c.CONF_CHANGE_ATTRIBUTE] = "change_attribute_required"
+            else:
+                self._draft[c.CONF_CHECK_DELAY] = user_input[c.CONF_CHECK_DELAY]
+            if invalid:
+                errors[c.CONF_TOLERANCES] = "invalid_tolerances"
+                tolerances_text = user_input.get(c.CONF_TOLERANCES) or ""
+            if not errors:
+                if self._draft.get(c.CONF_ESCALATION_ENABLED):
+                    return await self.async_step_rule_escalation()
+                return self._finalize_rule()
 
-        preset: dict[str, Any] = {}
-        domains = self._draft.get(c.CONF_DOMAINS, [])
-        if len(domains) == 1 and domains[0] in DOMAIN_PRESETS:
-            preset = DOMAIN_PRESETS[domains[0]]
-
+        preset = self._preset_for_draft()
         default_attrs = self._draft.get(
             c.CONF_ATTRIBUTES_TO_CHECK, preset.get("attributes_to_check", [])
         )
@@ -398,14 +489,18 @@ class ActionControlOptionsFlow(OptionsFlow):
             c.CONF_RETRY_DELAY,
             self._global.get(c.CONF_DEFAULT_RETRY_DELAY, c.DEFAULT_RETRY_DELAY),
         )
-        schema = vol.Schema(
-            {
+        fields: dict[Any, Any] = {}
+        if not movement:
+            fields[
                 vol.Required(
                     c.CONF_CHECK_DELAY,
                     default=self._draft.get(c.CONF_CHECK_DELAY, c.DEFAULT_CHECK_DELAY),
-                ): NumberSelector(
-                    NumberSelectorConfig(min=0, max=120, step=0.5, mode=NumberSelectorMode.BOX)
-                ),
+                )
+            ] = NumberSelector(
+                NumberSelectorConfig(min=0, max=120, step=0.5, mode=NumberSelectorMode.BOX)
+            )
+        fields.update(
+            {
                 vol.Optional(
                     c.CONF_ATTRIBUTES_TO_CHECK, default=default_attrs
                 ): SelectSelector(
@@ -435,40 +530,33 @@ class ActionControlOptionsFlow(OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
-                vol.Required(
-                    c.CONF_WAIT_FOR_CHANGE,
-                    default=self._draft.get(
-                        c.CONF_WAIT_FOR_CHANGE, preset.get("wait_for_change", False)
-                    ),
-                ): BooleanSelector(),
-                vol.Optional(
-                    c.CONF_CHANGE_ATTRIBUTE,
-                    default=self._draft.get(c.CONF_CHANGE_ATTRIBUTE)
-                    or preset.get("change_attribute")
-                    or "",
-                ): str,
-                vol.Required(
-                    c.CONF_CHANGE_TIMEOUT,
-                    default=self._draft.get(
-                        c.CONF_CHANGE_TIMEOUT,
-                        preset.get("change_timeout", c.DEFAULT_CHANGE_TIMEOUT),
-                    ),
-                ): NumberSelector(
-                    NumberSelectorConfig(min=1, max=600, step=1, mode=NumberSelectorMode.BOX)
-                ),
-                vol.Required(
-                    c.CONF_LOG_ENTITY_INFO,
-                    default=self._draft.get(
-                        c.CONF_LOG_ENTITY_INFO, c.DEFAULT_LOG_ENTITY_INFO
-                    ),
-                ): BooleanSelector(),
             }
         )
+        if movement:
+            fields.update(
+                {
+                    vol.Optional(
+                        c.CONF_CHANGE_ATTRIBUTE,
+                        default=self._draft.get(c.CONF_CHANGE_ATTRIBUTE)
+                        or preset.get("change_attribute")
+                        or "",
+                    ): str,
+                    vol.Required(
+                        c.CONF_CHANGE_TIMEOUT,
+                        default=self._draft.get(
+                            c.CONF_CHANGE_TIMEOUT,
+                            preset.get("change_timeout", c.DEFAULT_CHANGE_TIMEOUT),
+                        ),
+                    ): NumberSelector(
+                        NumberSelectorConfig(min=1, max=600, step=1, mode=NumberSelectorMode.BOX)
+                    ),
+                }
+            )
         return self.async_show_form(
-            step_id="rule_verify", data_schema=schema, errors=errors
+            step_id="rule_verify", data_schema=vol.Schema(fields), errors=errors
         )
 
-    # ---- add / edit: page 3 - escalation & notifications ----
+    # ---- add / edit: page 4 - escalation (only when it is enabled) ----
 
     async def async_step_rule_escalation(
         self, user_input: dict[str, Any] | None = None
@@ -476,44 +564,21 @@ class ActionControlOptionsFlow(OptionsFlow):
         if user_input is not None:
             self._draft.update(
                 {
-                    c.CONF_ESCALATION_ENABLED: user_input[c.CONF_ESCALATION_ENABLED],
                     c.CONF_ESCALATION_ACTION: user_input.get(c.CONF_ESCALATION_ACTION)
                     or None,
                     c.CONF_ESCALATION_COOLDOWN: user_input[c.CONF_ESCALATION_COOLDOWN],
                     c.CONF_ESCALATION_REPLAY_DELAY: user_input[
                         c.CONF_ESCALATION_REPLAY_DELAY
                     ],
-                    c.CONF_ESCALATION_CHECK_ENTITY_ID: user_input.get(
-                        c.CONF_ESCALATION_CHECK_ENTITY_ID
-                    )
-                    or None,
-                    c.CONF_ESCALATION_CHECK_STATE: user_input.get(
-                        c.CONF_ESCALATION_CHECK_STATE
-                    )
-                    or None,
-                    c.CONF_ESCALATION_CHECK_DELAY: user_input[c.CONF_ESCALATION_CHECK_DELAY],
-                    c.CONF_NOTIFY_PERSISTENT: user_input[c.CONF_NOTIFY_PERSISTENT],
-                    c.CONF_NOTIFY_SERVICE: user_input.get(c.CONF_NOTIFY_SERVICE) or None,
                 }
             )
+            if user_input[c.CONF_ESCALATION_CHECK_ENABLED]:
+                return await self.async_step_rule_escalation_check()
+            self._draft[c.CONF_ESCALATION_CHECK_ENTITY_ID] = None
             return self._finalize_rule()
 
-        notify_services = sorted(self.hass.services.async_services().get("notify", {}))
-        # EntitySelector rejects "" as an entity id, so it can't use a plain
-        # `default=""` like the other optional fields here -- prefill it via
-        # `suggested_value` instead, which skips voluptuous validation.
-        check_entity_key = vol.Optional(
-            c.CONF_ESCALATION_CHECK_ENTITY_ID,
-            description={
-                "suggested_value": self._draft.get(c.CONF_ESCALATION_CHECK_ENTITY_ID)
-            },
-        )
         schema = vol.Schema(
             {
-                vol.Required(
-                    c.CONF_ESCALATION_ENABLED,
-                    default=self._draft.get(c.CONF_ESCALATION_ENABLED, False),
-                ): BooleanSelector(),
                 vol.Optional(
                     c.CONF_ESCALATION_ACTION,
                     default=self._draft.get(c.CONF_ESCALATION_ACTION) or [],
@@ -534,6 +599,52 @@ class ActionControlOptionsFlow(OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=3600, step=1, mode=NumberSelectorMode.BOX)
                 ),
+                vol.Required(
+                    c.CONF_ESCALATION_CHECK_ENABLED,
+                    default=bool(self._draft.get(c.CONF_ESCALATION_CHECK_ENTITY_ID)),
+                ): BooleanSelector(),
+            }
+        )
+        return self.async_show_form(step_id="rule_escalation", data_schema=schema)
+
+    # ---- add / edit: page 5 - verifying the escalation action ----
+
+    async def async_step_rule_escalation_check(
+        self, user_input: dict[str, Any] | None = None
+    ) -> Any:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            entity_id = user_input.get(c.CONF_ESCALATION_CHECK_ENTITY_ID) or None
+            state = user_input.get(c.CONF_ESCALATION_CHECK_STATE) or None
+            self._draft.update(
+                {
+                    c.CONF_ESCALATION_CHECK_ENTITY_ID: entity_id,
+                    c.CONF_ESCALATION_CHECK_STATE: state,
+                    c.CONF_ESCALATION_CHECK_DELAY: user_input[
+                        c.CONF_ESCALATION_CHECK_DELAY
+                    ],
+                }
+            )
+            # Both are needed, otherwise the check silently does nothing.
+            if entity_id and state:
+                return self._finalize_rule()
+            if not entity_id:
+                errors[c.CONF_ESCALATION_CHECK_ENTITY_ID] = "escalation_check_required"
+            if not state:
+                errors[c.CONF_ESCALATION_CHECK_STATE] = "escalation_check_required"
+
+        # EntitySelector rejects "" as an entity id, so it can't use a plain
+        # `default=""` like the other optional fields here -- prefill it via
+        # `suggested_value` instead, which skips voluptuous validation.
+        check_entity_key = vol.Optional(
+            c.CONF_ESCALATION_CHECK_ENTITY_ID,
+            description={
+                "suggested_value": self._draft.get(c.CONF_ESCALATION_CHECK_ENTITY_ID)
+            },
+        )
+        schema = vol.Schema(
+            {
                 check_entity_key: EntitySelector(),
                 vol.Optional(
                     c.CONF_ESCALATION_CHECK_STATE,
@@ -547,21 +658,11 @@ class ActionControlOptionsFlow(OptionsFlow):
                 ): NumberSelector(
                     NumberSelectorConfig(min=0, max=600, step=1, mode=NumberSelectorMode.BOX)
                 ),
-                vol.Required(
-                    c.CONF_NOTIFY_PERSISTENT,
-                    default=self._draft.get(c.CONF_NOTIFY_PERSISTENT, True),
-                ): BooleanSelector(),
-                vol.Optional(
-                    c.CONF_NOTIFY_SERVICE,
-                    default=self._draft.get(c.CONF_NOTIFY_SERVICE) or "",
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=notify_services, custom_value=True, mode=SelectSelectorMode.DROPDOWN
-                    )
-                ),
             }
         )
-        return self.async_show_form(step_id="rule_escalation", data_schema=schema)
+        return self.async_show_form(
+            step_id="rule_escalation_check", data_schema=schema, errors=errors
+        )
 
     def _finalize_rule(self) -> Any:
         rule_id = self._editing_rule_id

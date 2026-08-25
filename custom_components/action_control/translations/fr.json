@@ -42,6 +42,17 @@
           "services": "Services (vide = tous les services du domaine)"
         }
       },
+      "rule_features": {
+        "title": "Règle – ce qu'elle doit faire",
+        "description": "Choisissez ce que cette règle utilise. Les étapes suivantes ne demanderont que les réglages réellement nécessaires à ces choix.",
+        "data": {
+          "verification_mode": "Comment vérifier la commande",
+          "escalation_enabled": "Déclencher une action de secours en cas d'échec persistant",
+          "log_entity_info": "Journaliser un résumé (entité, résultat, temps de réponse) pour cette règle au niveau info",
+          "notify_persistent": "Notifier via une notification persistante",
+          "notify_service": "Notifier également via ce service notify"
+        }
+      },
       "rule_verify": {
         "title": "Règle – vérification et relances",
         "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées.",
@@ -52,25 +63,27 @@
           "retries": "Nombre de relances",
           "retry_delay": "Délai entre les relances (secondes)",
           "retry_backoff": "Évolution du délai entre les relances",
-          "wait_for_change": "Attendre qu'un attribut commence réellement à changer (ex. volets position) plutôt qu'une vérification instantanée",
           "change_attribute": "Attribut à surveiller pour détecter un changement (ex. current_position)",
-          "change_timeout": "Délai d'attente du changement (secondes)",
-          "log_entity_info": "Journaliser un résumé (entité, résultat, temps de réponse) pour cette règle au niveau info"
+          "change_timeout": "Délai d'attente du changement (secondes)"
         }
       },
       "rule_escalation": {
-        "title": "Règle – escalade et notifications",
-        "description": "Définissez (optionnel) une action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante, ainsi que la façon d'être notifié.",
+        "title": "Règle – action de secours",
+        "description": "L'action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante.",
         "data": {
-          "escalation_enabled": "Activer l'action d'escalade",
           "escalation_action": "Action d'escalade",
           "escalation_cooldown": "Délai minimum entre deux escalades (secondes)",
           "escalation_replay_delay": "Délai après l'escalade avant de rejouer la commande (secondes)",
-          "escalation_check_entity_id": "Entité à vérifier après l'action de secours (optionnel)",
+          "escalation_check_enabled": "Vérifier que l'action de secours a fonctionné avant de rejouer la commande"
+        }
+      },
+      "rule_escalation_check": {
+        "title": "Règle – vérification de l'action de secours",
+        "description": "L'action de secours est relancée, selon le nombre de relances et l'évolution du délai de cette règle, jusqu'à ce que cette entité atteigne l'état attendu. La commande d'origine est rejouée dans tous les cas.",
+        "data": {
+          "escalation_check_entity_id": "Entité à vérifier après l'action de secours",
           "escalation_check_state": "État qu'elle doit atteindre (ex. on)",
-          "escalation_check_delay": "Délai avant de la vérifier (secondes)",
-          "notify_persistent": "Notifier via une notification persistante",
-          "notify_service": "Notifier également via ce service notify"
+          "escalation_check_delay": "Délai avant de la vérifier (secondes)"
         }
       },
       "edit_rule_select": {
@@ -102,7 +115,10 @@
       }
     },
     "error": {
-      "invalid_tolerances": "Les tolérances doivent s'écrire attribut:valeur, séparées par des virgules (ex. brightness:5, rgb_color:5)."
+      "invalid_tolerances": "Les tolérances doivent s'écrire attribut:valeur, séparées par des virgules (ex. brightness:5, rgb_color:5).",
+      "domains_required": "Choisissez au moins un domaine — une règle sans domaine ne correspond jamais à rien.",
+      "change_attribute_required": "Le mode Mouvement nécessite un attribut à surveiller (ex. current_position).",
+      "escalation_check_required": "Vérifier l'action de secours nécessite à la fois une entité et l'état qu'elle doit atteindre."
     },
     "abort": {
       "no_rules": "Aucune règle n'a encore été configurée."
@@ -127,6 +143,12 @@
         "constant": "Constant (même délai à chaque fois)",
         "linear": "Linéaire (délai × numéro de tentative)",
         "exponential": "Exponentiel (le délai double à chaque fois)"
+      }
+    },
+    "verification_mode": {
+      "options": {
+        "delay": "Délai — attendre, puis comparer l'état et les attributs",
+        "movement": "Mouvement — attendre qu'un attribut commence réellement à changer (volets, ...)"
       }
     }
   },

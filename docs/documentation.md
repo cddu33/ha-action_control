@@ -55,6 +55,37 @@ integration). For each rule you have configured, on a matching call it:
 6. **Notifies** you (persistent notification and/or a `notify.*` service)
    with what was expected vs. what was actually observed.
 
+```mermaid
+flowchart TD
+    A["call_service event"] --> B{"Self-issued context?"}
+    B -->|yes| Z1["Ignored — anti-loop"]
+    B -->|no| C{"Matches a rule?"}
+    C -->|no| Z2["Nothing to watch"]
+    C -->|yes| D["Resolve target entities,<br/>compute the expected state"]
+    D --> E{"Already satisfied?"}
+    E -->|yes| OK["ok"]
+    E -->|no| F{"Verification mode"}
+    F -->|Delay| G["Wait check_delay,<br/>compare with tolerance"]
+    F -->|Movement| H["Wait up to change_timeout for<br/>change_attribute to start moving"]
+    G --> I{"Satisfied?"}
+    H --> I
+    I -->|yes| OK
+    I -->|no| J{"Retries left?"}
+    J -->|yes| K["Re-issue the command<br/>delay grows per backoff mode"]
+    K --> F
+    J -->|no| L{"Escalation on,<br/>cooldown elapsed?"}
+    L -->|no| FAIL["failed"]
+    L -->|yes| M["Run the recovery action"]
+    M --> N{"Verify it?"}
+    N -->|yes| O["Re-run it until the check entity<br/>reaches its expected state"]
+    N -->|no| P["Wait escalation_replay_delay"]
+    O --> P
+    P --> Q["Replay the original command"]
+    Q --> ESC["escalated"]
+    FAIL --> R["Notify"]
+    ESC --> R
+```
+
 Each retry re-issues the command for that one entity: the original target
 keys (`entity_id`, `device_id`, `area_id`, `label_id`, `floor_id`) are
 replaced by that entity's id, and the rest of the service data is kept
@@ -80,6 +111,21 @@ That memory is intentionally in-process only (a Home Assistant restart
 clears it). There is never anything meaningful to carry across a restart,
 since a restart also stops any in-flight watchdog run.
 
+```mermaid
+sequenceDiagram
+    participant U as Automation, person, ...
+    participant HA as Home Assistant bus
+    participant AC as Action Control
+    U->>HA: light.turn_on
+    HA-->>AC: call_service event
+    AC->>AC: Unknown context — watch this entity
+    Note over AC: The light stays off: verification fails
+    AC->>AC: Create and remember a Context
+    AC->>HA: light.turn_on (retry, carrying that Context)
+    HA-->>AC: call_service event
+    AC->>AC: Known context — ignored, no new run
+```
+
 ## Configuring rules
 
 Everything is configured from the integration's **Configure** button
@@ -87,10 +133,33 @@ Everything is configured from the integration's **Configure** button
 
 | Menu entry | What it does |
 |---|---|
-| Add a rule | Wizard: what to watch → which services → verification & retries → escalation & notifications. |
+| Add a rule | Wizard: what to watch → which services → what it should do → the settings those choices need. |
 | Edit a rule | The same wizard, pre-filled with the selected rule. |
 | Delete a rule | Asks for confirmation, then removes the rule and its sensor. |
 | Global settings | Master switch and default values, see [Global settings](#global-settings). |
+
+The wizard only asks for what a rule actually uses: you tick the
+capabilities you want on the *what it should do* step, and the following
+steps show the matching settings — nothing else. A rule that just retries
+a command is four short steps; escalation and its verification only add
+steps when you ask for them.
+
+```mermaid
+flowchart TD
+    A["Targeting<br/>name, domains, filters"] --> B["Services"]
+    B --> C["What it should do<br/>mode, escalation, logging, notifications"]
+    C --> D{"Verification mode"}
+    D -->|Delay| E["Verification & retries<br/>+ delay before the first check"]
+    D -->|Movement| F["Verification & retries<br/>+ attribute to watch, timeout"]
+    E --> G{"Escalation ticked?"}
+    F --> G
+    G -->|no| Z["Rule saved"]
+    G -->|yes| H["Recovery action<br/>action, cooldown, replay delay"]
+    H --> I{"Verify the recovery action?"}
+    I -->|no| Z
+    I -->|yes| J["Verifying the recovery action<br/>entity, expected state, delay"]
+    J --> Z
+```
 
 Only one instance of the integration is needed — a second setup attempt is
 aborted on purpose. Saving any change reloads the integration so the
@@ -115,20 +184,30 @@ Filters are combined with AND: an entity must satisfy every filter that is
 set. A rule with no pattern/area/label/device filter at all matches every
 entity in scope for its domain(s)/service(s) — e.g. "watch every light".
 
+### What it should do
+
+The step that decides which of the following steps you'll be asked to fill in.
+
+| Field | Description | Default |
+|---|---|---|
+| How to verify the command | **Delay** — wait, then compare state and attributes. **Movement** — wait for an attribute to actually start changing, for things that travel (covers). The choice decides which fields the verification step asks for. | Delay (Movement for `cover`) |
+| Run a recovery action when it keeps failing | Off skips the recovery-action steps entirely. | off |
+| Log a summary for this rule at info level | When on, every entity's final outcome (ok/escalated/failed) for this rule is also logged at `info` level — entity, outcome, response time, attempt count — visible without enabling debug logging. Off by default; the full step-by-step trace is still only in the debug log. | off |
+| Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
+| Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
+
 ### Verification
 
 | Field | Description | Default (range) |
 |---|---|---|
-| Delay before the first check | Seconds to wait after the command before the first comparison (delay mode only). | 2 (0–120) |
+| Delay before the first check | Seconds to wait after the command before the first comparison. **Delay mode only.** | 2 (0–120) |
 | Attributes to check | Attributes compared in addition to the state (e.g. `brightness`, `rgb_color`). Only those actually present in the service call are compared. | none |
 | Tolerances | `attr:value, attr2:value2` — per-attribute numeric tolerance. List attributes (like `rgb_color`) apply the tolerance element by element. Entries that can't be parsed are ignored. | none (exact match) |
 | Number of retries | How many times to re-issue the command if verification fails. | 2 (0–10) |
 | Delay between retries | Seconds between each retry (delay mode only). | 2 (0–600) |
 | Delay growth between retries | How the delay between retries grows: `constant` (same delay every time), `linear` (delay × attempt number), or `exponential` (delay doubles each time, capped at 3600 s). Only affects delay mode — movement mode has no delay between retries to begin with. | constant |
-| Wait for change | Switches to movement mode: waits for `change_attribute` to actually change instead of comparing a snapshot. | off |
-| Attribute to watch | The attribute movement mode watches (e.g. `current_position`). Required for that mode: left empty, the rule stays in delay mode. | — |
-| Timeout waiting for the change | Seconds to wait for that attribute to change before considering it a failure. | 45 (1–600) |
-| Log a summary for this rule at info level | When on, every entity's final outcome (ok/escalated/failed) for this rule is also logged at `info` level — entity, outcome, response time, attempt count — visible without enabling debug logging. Off by default; the full step-by-step trace is still only in the debug log. | off |
+| Attribute to watch | The attribute movement mode watches (e.g. `current_position`). **Movement mode only**, and required — the step won't move on without it. | — |
+| Timeout waiting for the change | Seconds to wait for that attribute to change before considering it a failure. **Movement mode only.** | 45 (1–600) |
 
 When a rule targets exactly one of the `light`, `switch` or `cover`
 domains, sensible defaults are pre-filled automatically:
@@ -142,33 +221,39 @@ domains, sensible defaults are pre-filled automatically:
 Any other domain — or a rule targeting several domains at once — starts
 from a plain state-only check that you can refine with the fields above.
 
-### Escalation & notifications
+### Recovery action
+
+Only asked for when *Run a recovery action* is ticked.
 
 | Field | Description | Default (range) |
 |---|---|---|
-| Enable escalation action | Turns on the recovery-action step after persistent failure. | off |
 | Escalation action | Any Home Assistant action sequence (service call, script, ...) — the same action editor as in automations. An action that fails is logged and does not break the run. | — |
 | Minimum time between two escalations | Cooldown before the same rule may escalate again, in seconds. Counted from the moment the action has run, and shared by every entity of the rule. | 300 (0–86400) |
 | Delay after escalation before replaying the command | Seconds to wait after the escalation action before replaying the original command. | 90 (0–3600) |
-| Entity to verify after the escalation action | Optional. If set, Action Control checks this entity's state after running the escalation action, instead of assuming it worked. | — |
-| State it should reach | The state the entity above must reach (e.g. `on`). Required when an entity is set. | — |
-| Delay before checking it | Seconds to wait before the first check. | 5 (0–600) |
-| Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
-| Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
+| Verify the recovery action worked | Adds one more step to check the recovery action actually took effect, instead of assuming it did. | off |
 
 The cooldown is armed *before* the recovery action runs, and it survives a
 restart, so entities failing at the same moment cannot fire the action
 several times over. Escalation enabled without a configured action does
 nothing and is logged as a warning.
 
-When "Entity to verify" is set, the escalation action is re-run (up to
-"Number of retries" times, with the same delay-growth setting as the
-regular retries) until that entity reaches the expected state, before the
-original command gets replayed. This is for recovery actions that can fail
-too — a gateway restart switch that doesn't always take on the first try,
-for instance. If it's still not confirmed after all retries, the original
-command is replayed anyway (a warning is logged), exactly as if no check
-had been configured.
+### Verifying the recovery action
+
+Only asked for when *Verify the recovery action worked* is ticked.
+
+| Field | Description | Default (range) |
+|---|---|---|
+| Entity to verify after the recovery action | The entity whose state proves the recovery action worked. Required. | — |
+| State it should reach | The state that entity must reach (e.g. `on`). Required. | — |
+| Delay before checking it | Seconds to wait before the first check. | 5 (0–600) |
+
+The recovery action is re-run (up to "Number of retries" times, with the
+same delay-growth setting as the regular retries) until that entity reaches
+the expected state, before the original command gets replayed. This is for
+recovery actions that can fail too — a gateway restart switch that doesn't
+always take on the first try, for instance. If it's still not confirmed
+after all retries, the original command is replayed anyway (a warning is
+logged), exactly as if no check had been configured.
 
 The failure notification is sent right after the replay, without waiting
 again: it describes the state observed at that moment, and mentions that a

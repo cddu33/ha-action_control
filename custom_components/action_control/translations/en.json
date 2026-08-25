@@ -42,6 +42,17 @@
           "services": "Services (empty = any service in the domain)"
         }
       },
+      "rule_features": {
+        "title": "Rule – what it should do",
+        "description": "Pick what this rule uses. The next steps only ask for the settings these choices actually need.",
+        "data": {
+          "verification_mode": "How to verify the command",
+          "escalation_enabled": "Run a recovery action when it keeps failing",
+          "log_entity_info": "Log a summary (entity, outcome, response time) for this rule at info level",
+          "notify_persistent": "Notify via a persistent notification",
+          "notify_service": "Also notify via this notify service"
+        }
+      },
       "rule_verify": {
         "title": "Rule – verification & retries",
         "description": "Define how the outcome is checked and how retries are handled.",
@@ -52,25 +63,27 @@
           "retries": "Number of retries",
           "retry_delay": "Delay between retries (seconds)",
           "retry_backoff": "Delay growth between retries",
-          "wait_for_change": "Wait for an attribute to actually start changing (e.g. position covers) instead of a snapshot check",
           "change_attribute": "Attribute to watch for a change (e.g. current_position)",
-          "change_timeout": "Timeout waiting for the change (seconds)",
-          "log_entity_info": "Log a summary (entity, outcome, response time) for this rule at info level"
+          "change_timeout": "Timeout waiting for the change (seconds)"
         }
       },
       "rule_escalation": {
-        "title": "Rule – escalation & notifications",
-        "description": "Optionally define a recovery action (e.g. turning on a switch, or running a script) to run when verification keeps failing, and how you want to be notified.",
+        "title": "Rule – recovery action",
+        "description": "The recovery action (e.g. turning on a switch, or running a script) to run when verification keeps failing.",
         "data": {
-          "escalation_enabled": "Enable escalation action",
           "escalation_action": "Escalation action",
           "escalation_cooldown": "Minimum time between two escalations (seconds)",
           "escalation_replay_delay": "Delay after escalation before replaying the command (seconds)",
-          "escalation_check_entity_id": "Entity to verify after the escalation action (optional)",
+          "escalation_check_enabled": "Verify the recovery action worked before replaying the command"
+        }
+      },
+      "rule_escalation_check": {
+        "title": "Rule – verifying the recovery action",
+        "description": "The recovery action is re-run, using this rule's retry count and delay growth, until this entity reaches the expected state. The original command is replayed either way.",
+        "data": {
+          "escalation_check_entity_id": "Entity to verify after the recovery action",
           "escalation_check_state": "State it should reach (e.g. on)",
-          "escalation_check_delay": "Delay before checking it (seconds)",
-          "notify_persistent": "Notify via a persistent notification",
-          "notify_service": "Also notify via this notify service"
+          "escalation_check_delay": "Delay before checking it (seconds)"
         }
       },
       "edit_rule_select": {
@@ -102,7 +115,10 @@
       }
     },
     "error": {
-      "invalid_tolerances": "Tolerances must be written as attribute:value, separated by commas (e.g. brightness:5, rgb_color:5)."
+      "invalid_tolerances": "Tolerances must be written as attribute:value, separated by commas (e.g. brightness:5, rgb_color:5).",
+      "domains_required": "Pick at least one domain — a rule with no domain never matches anything.",
+      "change_attribute_required": "Movement mode needs an attribute to watch (e.g. current_position).",
+      "escalation_check_required": "Verifying the recovery action needs both an entity and the state it should reach."
     },
     "abort": {
       "no_rules": "No rule has been configured yet."
@@ -127,6 +143,12 @@
         "constant": "Constant (same delay every time)",
         "linear": "Linear (delay × attempt number)",
         "exponential": "Exponential (delay doubles each time)"
+      }
+    },
+    "verification_mode": {
+      "options": {
+        "delay": "Delay — wait, then compare state and attributes",
+        "movement": "Movement — wait for an attribute to actually start changing (covers, ...)"
       }
     }
   },
