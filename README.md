@@ -32,7 +32,12 @@ Assistant's `Context`.
 - **Immediate exit when already satisfied** — a no-op command, or one
   already applied by the time the event fires, resolves instantly with no
   delay or notification.
-- **Configurable retries** — retry count and delay, per rule.
+- **Configurable retries** — retry count and delay per rule, with a choice
+  of delay growth between retries (constant, linear, or exponential).
+- **Response time tracking** — each check's `response_duration` is exposed
+  on the status sensor, with an optional per-rule info-level log summary
+  (entity, outcome, response time, attempt count) for at-a-glance
+  visibility without enabling debug logging.
 - **Configurable escalation** — an optional recovery action (turn on a
   switch, run a script, ...) triggered after persistent failure, with a
   cooldown between escalations and a delay before replaying the original
