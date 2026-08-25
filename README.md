@@ -35,9 +35,11 @@ Assistant's `Context`.
 - **Configurable retries** — retry count and delay per rule, with a choice
   of delay growth between retries (constant, linear, or exponential).
 - **Response time tracking** — each check's `response_duration` is exposed
-  on the status sensor, with an optional per-rule info-level log summary
-  (entity, outcome, response time, attempt count) for at-a-glance
-  visibility without enabling debug logging.
+  on the status sensor.
+- **Optional per-rule info-level log** — a one-line summary per entity
+  (outcome, response time, attempt count) at `info` level, so you get
+  at-a-glance visibility without enabling debug logging. Off by default,
+  toggle it per rule.
 - **Configurable escalation** — an optional recovery action (turn on a
   switch, run a script, ...) triggered after persistent failure, with a
   cooldown between escalations and a delay before replaying the original
