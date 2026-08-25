@@ -16,6 +16,27 @@ activer un switch) si le problème persiste — le tout sans écrire de YAML,
 et sans risque de boucle de réémission grâce à un mécanisme anti-boucle
 interne basé sur le `Context` de Home Assistant.
 
+```mermaid
+flowchart TD
+    A["Événement call_service"] --> B{"Déjà satisfait ?"}
+    B -->|oui| OK["ok"]
+    B -->|non| C{"Mode de vérification"}
+    C -->|Délai| D["Attendre, puis comparer<br/>l'état et les attributs"]
+    C -->|Mouvement| E["Attendre que l'attribut<br/>commence réellement à bouger"]
+    D --> F{"Satisfait ?"}
+    E --> F
+    F -->|oui| OK
+    F -->|non| G{"Relances restantes ?"}
+    G -->|oui| H["Réémission de la commande"]
+    H --> C
+    G -->|non| I{"Action de secours ?"}
+    I -->|non| FAIL["failed"]
+    I -->|oui| J["L'exécuter, éventuellement la vérifier,<br/>puis rejouer la commande"]
+    J --> ESC["escalated"]
+    FAIL --> K["Notification"]
+    ESC --> K
+```
+
 ## Fonctionnalités
 
 - **Vérification générique des commandes** — surveille n'importe quel appel
@@ -97,19 +118,22 @@ Control*. Toute la configuration (règles de surveillance, options
 d'escalade, notifications) se fait ensuite depuis le bouton *Configurer*
 de l'intégration — aucun YAML n'est nécessaire.
 
-Chaque règle définit :
+L'assistant demande d'abord les fonctionnalités voulues, puis n'affiche que
+les réglages que ces choix nécessitent réellement :
 
 - **Ciblage** : domaine(s), service(s), motif d'`entity_id`, motif de nom,
   pièces, étiquettes, appareils.
-- **Vérification** : délai avant contrôle, attributs à vérifier avec
-  tolérance (ex. `brightness`, `rgb_color`), nombre de relances et délai
-  entre relances. Les domaines `light`, `switch` et `cover` sont préremplis
-  avec des valeurs par défaut adaptées.
-- **Escalade** (optionnelle) : une action de secours (ex. activer un
-  switch, relancer un script) déclenchée si la vérification échoue de
-  manière persistante, avec un délai minimum entre deux escalades.
-- **Notifications** : notification persistante et/ou service `notify.*` de
-  votre choix.
+- **Ce qu'elle doit faire** : comment vérifier (Délai ou Mouvement),
+  faut-il une action de secours, journalisation et notifications.
+- **Vérification** : attributs à vérifier avec tolérance (ex. `brightness`,
+  `rgb_color`), nombre de relances et évolution du délai — plus le délai
+  avant contrôle, ou l'attribut à surveiller, selon le mode. Les domaines
+  `light`, `switch` et `cover` sont préremplis avec des valeurs par défaut
+  adaptées.
+- **Action de secours** (seulement si cochée) : quoi exécuter si la
+  vérification échoue de manière persistante, avec un délai minimum entre
+  deux escalades — et éventuellement une entité à contrôler pour confirmer
+  qu'elle a fonctionné.
 
 Voir la [documentation complète](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.fr.md) pour la
 référence détaillée de chaque champ, des exemples prêts à l'emploi, la

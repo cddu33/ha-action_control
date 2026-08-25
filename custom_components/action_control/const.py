@@ -37,6 +37,14 @@ DEFAULT_RETRY_BACKOFF = RETRY_BACKOFF_CONSTANT
 MAX_RETRY_DELAY = 3600.0  # cap for linear/exponential backoff growth
 DEFAULT_LOG_ENTITY_INFO = False
 
+# Config-flow-only keys: they gate which fields the wizard asks for, and map
+# onto the rule fields below. They are never stored on a Rule.
+CONF_VERIFICATION_MODE = "verification_mode"
+VERIFICATION_MODE_DELAY = "delay"
+VERIFICATION_MODE_MOVEMENT = "movement"
+VERIFICATION_MODES = (VERIFICATION_MODE_DELAY, VERIFICATION_MODE_MOVEMENT)
+CONF_ESCALATION_CHECK_ENABLED = "escalation_check_enabled"
+
 # rule dict keys (also dataclass field names, kept identical on purpose)
 CONF_RULE_ID = "rule_id"
 CONF_NAME = "name"
