@@ -77,6 +77,9 @@ class RuleStatusSensor(ActionControlEntity, SensorEntity):
             "mismatches": status.mismatches,
             "last_checked": status.last_checked,
             "response_duration": status.response_duration,
+            # Config, not run state: there is otherwise no way to tell from
+            # the UI whether this rule's info-level summary is switched on.
+            "log_entity_info": self._rule.log_entity_info,
         }
 
     async def async_added_to_hass(self) -> None:

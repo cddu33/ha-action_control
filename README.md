@@ -101,14 +101,6 @@ Copy the `custom_components/action_control` folder into the
 `custom_components` directory of your Home Assistant configuration, then
 restart.
 
-### About the icon
-
-The integration ships its own icon under `custom_components/action_control/brand/`.
-Home Assistant 2026.3.0+ serves it automatically through the local
-[Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
-(no configuration needed). That is also the minimum version HACS enforces
-for this integration (`hacs.json`).
-
 ## Configuration
 
 Settings → Devices & services → Add integration → *Action Control*. All
