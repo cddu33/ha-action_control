@@ -103,14 +103,6 @@ flowchart TD
 Copier le dossier `custom_components/action_control` dans le répertoire
 `custom_components` de votre configuration Home Assistant, puis redémarrer.
 
-### À propos de l'icône
-
-L'intégration embarque sa propre icône sous `custom_components/action_control/brand/`.
-Home Assistant 2026.3.0+ la sert automatiquement via l'API proxy locale
-[Brands Proxy API](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api)
-(aucune configuration nécessaire). C'est aussi la version minimale exigée
-par HACS pour cette intégration (`hacs.json`).
-
 ## Configuration
 
 Paramètres → Appareils et services → Ajouter une intégration → *Action

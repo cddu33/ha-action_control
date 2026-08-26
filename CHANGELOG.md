@@ -16,6 +16,13 @@ the published GitHub releases — which is what HACS offers users as an update.
   to `translations/en.json` and that every language has the same key set — a
   missing key breaks nothing at runtime, it just shows a raw field name.
 
+### Changed
+- The minimum Home Assistant version dropped from `2026.3.0` to `2025.3.0`.
+  The old value was only there so the icon would be served natively, but HACS
+  treats it as a hard floor and refused to install below it. `2025.3.0` is the
+  real minimum the code needs — `AddConfigEntryEntitiesCallback` landed there,
+  and every other Home Assistant API this integration uses predates it.
+
 ### Fixed
 - A rule saved before 0.5.0 could carry an escalation-check entity with no
   state to compare it against — the two fields were independently optional
