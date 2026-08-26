@@ -538,6 +538,30 @@ ligne finale. C'est la nouvelle vérification qui journalisera son résultat.
    d'Action Control lui-même — c'est la protection anti-boucle qui fait
    son travail.
 
+### Quand une règle signale un échec qui n'en est pas un
+
+Si l'écart montre l'état *inverse* de celui demandé — attendu `on`, actuel
+`off`, avec les attributs à `None` — l'entité a presque certainement reçu
+une nouvelle commande avant la fin de la vérification, plutôt que d'avoir
+échoué à appliquer la première.
+
+Une commande plus récente annule normalement la vérification en cours, mais
+seulement si elle parvient à Action Control sous forme d'événement
+`call_service` correspondant à la même règle. Ce n'est pas le cas quand :
+
+- quelqu'un a appuyé sur un **interrupteur physique**, ou qu'une
+  télécommande est **liée directement** à l'appareil (les groupes et
+  liaisons Zigbee ne remontent jamais à Home Assistant comme appel de
+  service) ;
+- la commande est passée par **`homeassistant.turn_on`/`turn_off`**, ou par
+  une scène ou un script qui les utilise — ce sont des appels du domaine
+  `homeassistant`, donc une règle surveillant `light` ou `switch` ne leur
+  correspond pas.
+
+Pour ce second cas, ajoutez `homeassistant` aux domaines de la règle, ou
+augmentez `check_delay` pour laisser la situation se stabiliser avant la
+comparaison.
+
 ## Limites connues
 
 - **Les textes de notification n'existent qu'en français et en anglais**,
@@ -552,5 +576,13 @@ ligne finale. C'est la nouvelle vérification qui journalisera son résultat.
   vérifiée. Les commandes devenues obsolètes entre-temps sont abandonnées
   plutôt que mises en file, et une vérification qui démarre tardivement se
   résout immédiatement si l'entité est déjà dans l'état demandé.
+- **Seules les commandes passant par un appel de service sont vues.** Une
+  commande plus récente annule une vérification en cours, mais uniquement si
+  elle a produit un événement `call_service` correspondant à une règle. Un
+  appui sur un interrupteur physique, une télécommande liée directement à
+  l'ampoule, ou `homeassistant.turn_off` (qui appartient au domaine
+  `homeassistant`, pas à `light`/`switch`) sont invisibles : l'entité bouge,
+  la vérification n'en sait rien, et signale l'écart comme un échec. Voir
+  [Quand une règle signale un échec qui n'en est pas un](#quand-une-règle-signale-un-échec-qui-nen-est-pas-un).
 - **Le rejeu après escalade n'est pas vérifié** ; c'est la dernière action
   de la séquence.

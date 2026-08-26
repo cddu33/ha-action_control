@@ -408,6 +408,19 @@ async def async_run_watchdog(
                 _publish(engine, rule, status, RuleStatus.OK, final_state, started_at)
                 return
 
+        # Both modes converge here, and neither re-checks after its loop ends:
+        # a command landing during the last wait would otherwise be reported as
+        # a failure -- and could fire the recovery action -- for an order the
+        # user has already replaced.
+        if _superseded():
+            _LOGGER.debug(
+                "Rule '%s': newer command for %s, not reporting the outcome of "
+                "the superseded check",
+                rule.name,
+                entity_id,
+            )
+            return
+
         # Verification failed after all retries (or no movement detected).
         escalated = False
         can_escalate = rule.escalation_enabled and bool(rule.escalation_action)
