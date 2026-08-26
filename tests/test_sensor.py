@@ -52,3 +52,5 @@ async def test_sensor_follows_the_rule_status(hass, mock_config_entry):
     assert state.attributes["expected_state"] == "on"
     assert isinstance(state.attributes["response_duration"], float)
     assert state.attributes["response_duration"] >= 0
+    # Surfaced so the info-log toggle is verifiable without diagnostics.
+    assert state.attributes["log_entity_info"] is False

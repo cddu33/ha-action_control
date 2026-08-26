@@ -407,20 +407,24 @@ tolérance, et relance en cas d'écart.
 
 - Domaines : `cover`
 - Motif d'entity_id : `cover.volet_*`
-- Attendre un changement : activé, attribut `current_position`, délai 45 s
-- Escalade : activée, action = `switch.turn_on` sur le switch de
-  redémarrage de votre passerelle, délai de recharge 300 s, délai de rejeu
-  90 s
+- Comment vérifier la commande : **Mouvement**, attribut
+  `current_position`, délai 45 s
+- Déclencher une action de secours : **activé** — action = `switch.turn_on`
+  sur le switch de redémarrage de votre passerelle, délai de recharge
+  300 s, délai de rejeu 90 s
+- Vérifier que l'action de secours a fonctionné : **activé** — entité =
+  `switch.klf200_restart`, état `on`, délai 5 s
 
 Attend qu'un volet commence réellement à bouger ; si ce n'est pas le cas
 après les relances, active le switch de redémarrage de la passerelle,
-attend, puis rejoue la commande d'origine.
+confirme que le switch est bien repassé sur `on` (en relançant le
+redémarrage sinon), attend, puis rejoue la commande d'origine.
 
 ### Position de volet exacte
 
 - Domaines : `cover`
 - Services : `set_cover_position`
-- Attendre un changement : **désactivé** (mode Délais)
+- Comment vérifier la commande : **Délai**
 - Attributs à vérifier : `current_position`
 - Tolérances : `current_position:2`
 - Délai avant la première vérification : 30 s (le temps que le volet
@@ -475,9 +479,46 @@ Au niveau debug, vous verrez quelles règles un appel de service a
 déclenchées, quelles entités sont surveillées et avec quel état/attributs
 attendus, chaque tentative de vérification/relance avec ses écarts,
 l'escalade et le rejeu, les appels auto-émis ignorés, ainsi que les
-notifications envoyées. L'échec final de vérification d'une règle est
-toujours journalisé au niveau **warning**, donc visible même sans debug
-activé.
+notifications envoyées.
+
+### Ce que vous avez sans activer le debug
+
+Toujours journalisé, sans aucune configuration :
+
+| Niveau | Quand |
+|---|---|
+| `warning` | La vérification d'une règle a définitivement échoué (avec les écarts). |
+| `warning` | L'entité de vérification d'escalade n'a jamais atteint l'état attendu. |
+| `warning` | L'escalade est activée sur une règle mais aucune action n'est configurée. |
+| `error` | Une commande, une action de secours ou une notification a levé une erreur — journalisée avec sa trace, sans interrompre la vérification. |
+
+### Le résumé par règle (`info`)
+
+Cocher *Journaliser un résumé… au niveau info* à l'étape **ce qu'elle doit
+faire** d'une règle ajoute une ligne `info` par entité, à chaque résolution
+de cette règle :
+
+```
+Rule 'Lights watchdog': light.kitchen -> ok in 0.42s (0 attempt(s))
+```
+
+Une ligne par entité et par résultat (`ok`, `escalated`, `failed`) — pas une
+par relance. C'est le moyen de suivre les temps de réponse sans activer le
+debug sur tout le composant.
+
+> **Ces lignes n'apparaissent pas dans Réglages → Système → Journaux.** Ce
+> panneau n'affiche que `warning` et au-dessus. Cliquez sur **Charger les
+> journaux complets**, ou ouvrez directement `config/home-assistant.log`, et
+> cherchez `Rule '`. C'est le piège classique : la fonctionnalité semble
+> cassée alors qu'elle est seulement masquée.
+
+Si vous préférez ne pas lire les journaux, le même temps de réponse est
+disponible dans l'attribut `response_duration` du capteur de statut de la
+règle.
+
+À noter : une vérification **remplacée** — une commande plus récente arrive
+sur la même entité alors qu'un contrôle est encore en cours — s'arrête sans
+ligne finale. C'est la nouvelle vérification qui journalisera son résultat.
 
 ### Quand une règle ne se déclenche jamais
 

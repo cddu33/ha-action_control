@@ -386,19 +386,23 @@ tolerance, and retries on mismatch.
 
 - Domains: `cover`
 - Entity ID pattern: `cover.volet_*`
-- Wait for change: on, attribute `current_position`, timeout 45 s
-- Escalation: enabled, action = `switch.turn_on` on your gateway's restart
-  switch, cooldown 300 s, replay delay 90 s
+- How to verify the command: **Movement**, attribute `current_position`,
+  timeout 45 s
+- Run a recovery action: **on** — action = `switch.turn_on` on your
+  gateway's restart switch, cooldown 300 s, replay delay 90 s
+- Verify the recovery action worked: **on** — entity =
+  `switch.klf200_restart`, state `on`, delay 5 s
 
 Waits for a cover to actually start moving; if it doesn't after the
-retries, turns on the gateway's restart switch, waits, then replays the
+retries, turns on the gateway's restart switch, confirms the switch really
+came back on (re-running the restart if it didn't), waits, then replays the
 original command.
 
 ### Exact cover position
 
 - Domains: `cover`
 - Services: `set_cover_position`
-- Wait for change: **off** (delay mode)
+- How to verify the command: **Delay**
 - Attributes to check: `current_position`
 - Tolerances: `current_position:2`
 - Delay before the first check: 30 s (long enough for the cover to travel)
@@ -450,9 +454,43 @@ logger:
 At debug level you'll see which rules a service call matched, which
 entities got watched and with what expected state/attributes, each
 check/retry attempt with its mismatches, escalation and replay, ignored
-self-issued calls, and outgoing notifications. A rule's final failed
-verification is always logged at **warning** level, so it's visible even
-without debug logging.
+self-issued calls, and outgoing notifications.
+
+### What you get without enabling debug
+
+These are always logged, no configuration needed:
+
+| Level | When |
+|---|---|
+| `warning` | A rule's verification finally failed (with the mismatches). |
+| `warning` | The escalation-check entity never reached its expected state. |
+| `warning` | Escalation is enabled on a rule but no action is configured. |
+| `error` | A command, escalation action or notification raised — logged with its traceback, without breaking the run. |
+
+### The per-rule summary (`info`)
+
+Ticking *Log a summary … at info level* on a rule's **what it should do**
+step adds one `info` line per entity, each time that rule resolves:
+
+```
+Rule 'Lights watchdog': light.kitchen -> ok in 0.42s (0 attempt(s))
+```
+
+One line per entity and per outcome (`ok`, `escalated`, `failed`) — not one
+per retry. It's the way to follow response times without turning on debug
+for the whole component.
+
+> **You will not see these lines in Settings → System → Logs.** That panel
+> only shows `warning` and above. Click **Load full logs** there, or open
+> `config/home-assistant.log` directly, and search for `Rule '`. This trips
+> people up: the feature looks broken when it is only hidden.
+
+If you'd rather not read logs at all, the same response time is available
+as the `response_duration` attribute of the rule's status sensor.
+
+Note that a run which gets **superseded** — a newer command for the same
+entity arrives while a check is still in flight — stops without a final
+line. The newer run logs its own outcome instead.
 
 ### When a rule never triggers
 
