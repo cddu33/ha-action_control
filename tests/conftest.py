@@ -41,7 +41,7 @@ def make_cover_rule(**overrides) -> Rule:
         retries=1,
         escalation_enabled=True,
         escalation_action=[
-            {"action": "script.restart_velux", "data": {}}
+            {"action": "script.restart_gateway", "data": {}}
         ],
         escalation_cooldown=300,
         escalation_replay_delay=0,

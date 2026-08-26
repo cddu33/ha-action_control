@@ -382,7 +382,7 @@ itself once the rule is fixed or the stale target is removed.
 Verifies that the requested brightness/color were actually applied, with
 tolerance, and retries on mismatch.
 
-### Cover / gateway-restart watchdog (KLF200-style)
+### Cover / gateway-restart watchdog
 
 - Domains: `cover`
 - Entity ID pattern: `cover.volet_*`
@@ -391,7 +391,7 @@ tolerance, and retries on mismatch.
 - Run a recovery action: **on** — action = `switch.turn_on` on your
   gateway's restart switch, cooldown 300 s, replay delay 90 s
 - Verify the recovery action worked: **on** — entity =
-  `switch.klf200_restart`, state `on`, delay 5 s
+  `switch.gateway_restart`, state `on`, delay 5 s
 
 Waits for a cover to actually start moving; if it doesn't after the
 retries, turns on the gateway's restart switch, confirms the switch really
@@ -515,5 +515,11 @@ line. The newer run logs its own outcome instead.
   once only leaves the last outcome on the sensor.
 - **Editing rules reloads the integration**, which cancels in-flight
   checks and resets the sensors to `idle`.
+- **A check holds its (rule, entity) slot for the whole run**, sleeps
+  included — so with escalation and a long replay delay, a new command on
+  that same entity waits before being verified. Commands that are already
+  obsolete by then are dropped rather than queued, and a run that starts
+  late still resolves immediately if the entity is already in the
+  requested state.
 - **The post-escalation replay is not verified**; it is the last action of
   the run.

@@ -403,7 +403,7 @@ cible manquante retirée.
 Vérifie que la luminosité/couleur demandées ont bien été appliquées, avec
 tolérance, et relance en cas d'écart.
 
-### Surveillance de volets / redémarrage de passerelle (façon KLF200)
+### Surveillance de volets / redémarrage de passerelle
 
 - Domaines : `cover`
 - Motif d'entity_id : `cover.volet_*`
@@ -413,7 +413,7 @@ tolérance, et relance en cas d'écart.
   sur le switch de redémarrage de votre passerelle, délai de recharge
   300 s, délai de rejeu 90 s
 - Vérifier que l'action de secours a fonctionné : **activé** — entité =
-  `switch.klf200_restart`, état `on`, délai 5 s
+  `switch.gateway_restart`, état `on`, délai 5 s
 
 Attend qu'un volet commence réellement à bouger ; si ce n'est pas le cas
 après les relances, active le switch de redémarrage de la passerelle,
@@ -546,5 +546,11 @@ ligne finale. C'est la nouvelle vérification qui journalisera son résultat.
   entités à la fois ne laisse que le dernier résultat sur le capteur.
 - **Modifier une règle recharge l'intégration**, ce qui annule les
   vérifications en cours et remet les capteurs sur `idle`.
+- **Une vérification occupe son créneau (règle, entité) pendant toute sa
+  durée**, attentes comprises — avec une escalade et un long délai de rejeu,
+  une nouvelle commande sur cette même entité attend donc avant d'être
+  vérifiée. Les commandes devenues obsolètes entre-temps sont abandonnées
+  plutôt que mises en file, et une vérification qui démarre tardivement se
+  résout immédiatement si l'entité est déjà dans l'état demandé.
 - **Le rejeu après escalade n'est pas vérifié** ; c'est la dernière action
   de la séquence.

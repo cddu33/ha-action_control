@@ -245,6 +245,19 @@ async def async_run_watchdog(
         """True once a newer command for this entity has been dispatched."""
         return not engine.is_current_run(rule.rule_id, entity_id, run_token)
 
+    # Checked before queueing as well as after: the lock is held for the whole
+    # run, sleeps included, so an already-obsolete check would otherwise sit
+    # here for as long as the run ahead of it takes -- minutes with the
+    # defaults, far longer with escalation and a long replay delay.
+    if _superseded():
+        _LOGGER.debug(
+            "Rule '%s': a newer command for %s superseded this check before it "
+            "started, dropping it",
+            rule.name,
+            entity_id,
+        )
+        return
+
     async with lock:
         if _superseded():
             _LOGGER.debug(
@@ -408,8 +421,13 @@ async def async_run_watchdog(
                 rule.name,
                 entity_id,
             )
-            await _run_escalation(engine, hass, rule)
-            if rule.escalation_check_entity_id:
+            ran = await _run_escalation(engine, hass, rule)
+            # Both halves are needed: rules saved before the state became
+            # mandatory can carry an entity with no state to compare it to,
+            # and that check could only ever fail -- re-running the recovery
+            # action for nothing. Nor is there anything to verify if the
+            # action itself never ran.
+            if ran and rule.escalation_check_entity_id and rule.escalation_check_state:
                 await _verify_escalation(engine, hass, rule)
             await asyncio.sleep(rule.escalation_replay_delay)
             _LOGGER.debug(

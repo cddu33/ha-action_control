@@ -17,13 +17,25 @@ the published GitHub releases — which is what HACS offers users as an update.
   missing key breaks nothing at runtime, it just shows a raw field name.
 
 ### Fixed
+- A rule saved before 0.5.0 could carry an escalation-check entity with no
+  state to compare it against — the two fields were independently optional
+  back then. That check can never pass, so it re-ran the recovery action
+  once per retry, for nothing, while holding the entity's slot. The check is
+  now attempted only when both fields are set, and only if the recovery
+  action actually ran.
+- A check that had already been superseded by a newer command waited for the
+  in-flight run to finish before discovering it should be dropped. Since a
+  run holds its slot across every delay — including escalation and the
+  replay delay — those obsolete checks could pile up. They now exit
+  immediately.
 - The documentation's logging section now lists what is logged without
   enabling debug, and warns that *Settings → System → Logs* only shows
   `warning` and above — so the per-rule `info` summary needs **Load full
   logs** or `home-assistant.log`. It looked like a broken feature.
 - Recipes referenced *Wait for change* and *Escalation: enabled*, field names
   removed from the UI in 0.5.0. They now use the current labels, and the
-  KLF200 recipe shows the escalation verification it was written for.
+  gateway-restart recipe shows the escalation verification it was written
+  for.
 
 ## [0.5.0]
 

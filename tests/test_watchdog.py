@@ -1,6 +1,7 @@
 """Integration-style tests: call_service event -> verify/retry/notify flow."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import pytest
@@ -137,7 +138,7 @@ async def test_escalation_runs_once_for_several_failing_entities(
 
     restarts: list[ServiceCall] = []
     hass.services.async_register("cover", "open_cover", lambda call: None)
-    hass.services.async_register("script", "restart_velux", lambda call: restarts.append(call))
+    hass.services.async_register("script", "restart_gateway", lambda call: restarts.append(call))
     hass.services.async_register("persistent_notification", "create", lambda call: None)
 
     await hass.services.async_call(
@@ -155,7 +156,7 @@ async def test_escalation_check_passes_without_retrying_the_action(hass):
     """The escalation action reaching the expected state on the first try
     must not trigger any extra retry of that action."""
     rule = make_cover_rule(
-        escalation_check_entity_id="switch.klf_restart",
+        escalation_check_entity_id="switch.gateway_restart",
         escalation_check_state="on",
         escalation_check_delay=0,
     )
@@ -167,10 +168,10 @@ async def test_escalation_check_passes_without_retrying_the_action(hass):
 
     async def _restart(call: ServiceCall) -> None:
         restarts.append(call)
-        hass.states.async_set("switch.klf_restart", "on")
+        hass.states.async_set("switch.gateway_restart", "on")
 
     hass.services.async_register("cover", "open_cover", lambda call: None)
-    hass.services.async_register("script", "restart_velux", _restart)
+    hass.services.async_register("script", "restart_gateway", _restart)
     hass.services.async_register("persistent_notification", "create", lambda call: None)
 
     await hass.services.async_call(
@@ -183,7 +184,7 @@ async def test_escalation_check_passes_without_retrying_the_action(hass):
 
 async def test_escalation_check_retries_the_action_until_confirmed(hass):
     rule = make_cover_rule(
-        escalation_check_entity_id="switch.klf_restart",
+        escalation_check_entity_id="switch.gateway_restart",
         escalation_check_state="on",
         escalation_check_delay=0,
         retries=2,
@@ -193,17 +194,17 @@ async def test_escalation_check_retries_the_action_until_confirmed(hass):
     await _setup(hass, entry)
 
     hass.states.async_set("cover.volet_salon", "closed", {"current_position": 0})
-    hass.states.async_set("switch.klf_restart", "off")
+    hass.states.async_set("switch.gateway_restart", "off")
     restarts: list[ServiceCall] = []
 
     async def _restart(call: ServiceCall) -> None:
         # Only takes effect on the second run.
         if len(restarts) == 1:
-            hass.states.async_set("switch.klf_restart", "on")
+            hass.states.async_set("switch.gateway_restart", "on")
         restarts.append(call)
 
     hass.services.async_register("cover", "open_cover", lambda call: None)
-    hass.services.async_register("script", "restart_velux", _restart)
+    hass.services.async_register("script", "restart_gateway", _restart)
     hass.services.async_register("persistent_notification", "create", lambda call: None)
 
     await hass.services.async_call(
@@ -212,14 +213,14 @@ async def test_escalation_check_retries_the_action_until_confirmed(hass):
     await hass.async_block_till_done()
 
     assert len(restarts) == 2
-    assert hass.states.get("switch.klf_restart").state == "on"
+    assert hass.states.get("switch.gateway_restart").state == "on"
 
 
 async def test_escalation_check_still_replays_command_after_exhausting_retries(hass):
     """Even if the escalation target never confirms, the original command
     must still be replayed as a last resort."""
     rule = make_cover_rule(
-        escalation_check_entity_id="switch.klf_restart",
+        escalation_check_entity_id="switch.gateway_restart",
         escalation_check_state="on",
         escalation_check_delay=0,
         retries=1,
@@ -229,13 +230,13 @@ async def test_escalation_check_still_replays_command_after_exhausting_retries(h
     await _setup(hass, entry)
 
     hass.states.async_set("cover.volet_salon", "closed", {"current_position": 0})
-    hass.states.async_set("switch.klf_restart", "off")
+    hass.states.async_set("switch.gateway_restart", "off")
     reopen_calls: list[ServiceCall] = []
 
     hass.services.async_register(
         "cover", "open_cover", lambda call: reopen_calls.append(call)
     )
-    hass.services.async_register("script", "restart_velux", lambda call: None)
+    hass.services.async_register("script", "restart_gateway", lambda call: None)
     hass.services.async_register("persistent_notification", "create", lambda call: None)
 
     await hass.services.async_call(
@@ -246,7 +247,39 @@ async def test_escalation_check_still_replays_command_after_exhausting_retries(h
     # initial call + 1 move-detection retry (retries=1) + the replay after
     # the (unconfirmed) escalation.
     assert len(reopen_calls) == 3
-    assert hass.states.get("switch.klf_restart").state == "off"
+    assert hass.states.get("switch.gateway_restart").state == "off"
+
+
+async def test_escalation_check_without_a_state_is_not_attempted(hass):
+    """A rule saved before the state became mandatory has the entity set but
+    no state to compare against. That check can never pass, so it must not
+    re-run the recovery action at all."""
+    rule = make_cover_rule(
+        escalation_check_entity_id="switch.gateway_restart",
+        escalation_check_state=None,
+        escalation_check_delay=0,
+        retries=2,
+        retry_delay=0,
+    )
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("cover.volet_salon", "closed", {"current_position": 0})
+    hass.states.async_set("switch.gateway_restart", "off")
+    restarts: list[ServiceCall] = []
+
+    hass.services.async_register("cover", "open_cover", lambda call: None)
+    hass.services.async_register(
+        "script", "restart_gateway", lambda call: restarts.append(call)
+    )
+    hass.services.async_register("persistent_notification", "create", lambda call: None)
+
+    await hass.services.async_call(
+        "cover", "open_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert len(restarts) == 1
 
 
 async def test_a_failing_command_still_reports(hass, mock_config_entry):
@@ -351,6 +384,39 @@ async def test_a_superseded_run_is_dropped(hass, mock_config_entry):
     )
 
     assert calls == []
+
+
+async def test_a_superseded_run_does_not_wait_for_the_lock(hass, mock_config_entry):
+    """The lock is held for a whole run, sleeps included. An already-obsolete
+    check must bail out instead of queueing behind it."""
+    engine = await _setup(hass, mock_config_entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    hass.services.async_register("light", "turn_on", lambda call: None)
+
+    rule = next(iter(engine.rules.values()))
+    engine.next_run_token(rule.rule_id, "light.kitchen")
+
+    # Stand in for a run still in flight and holding the lock.
+    lock = engine.lock_for(rule.rule_id, "light.kitchen")
+    await lock.acquire()
+    try:
+        await asyncio.wait_for(
+            watchdog.async_run_watchdog(
+                engine,
+                rule,
+                "light.kitchen",
+                "light",
+                "turn_on",
+                {"brightness": 200},
+                frozenset({"on"}),
+                {"brightness": 200},
+                run_token=0,
+            ),
+            timeout=1,
+        )
+    finally:
+        lock.release()
 
 
 # ---- retry backoff ----
