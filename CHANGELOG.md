@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [Unreleased]
+
+### Fixed
+- A command that contradicted one still being verified — turning a light back
+  off while the check for `turn_on` was running — was reported as a failed
+  verification, with a warning and a notification, and could even fire the
+  recovery action for an order the user had already replaced. The check for a
+  newer command was missing at the one point where both verification modes
+  converge: between the end of the retry loop and the failure path. It was
+  therefore reached whenever the newer command landed during the last wait,
+  or on any rule with no retries configured.
+- Document that only commands issued as service calls can supersede a check.
+  A physical switch press, a directly bound remote, or `homeassistant.turn_off`
+  (a different domain from `light`/`switch`) stay invisible, and a mismatch
+  they cause still reads as a failure.
+
 ## [0.5.3]
 
 ### Added

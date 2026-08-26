@@ -507,6 +507,27 @@ line. The newer run logs its own outcome instead.
 5. `Ignoring self-issued call_service event` means the call came from
    Action Control itself — that's the anti-loop protection doing its job.
 
+### When a rule reports a failure that isn't one
+
+If the mismatch shows the *opposite* of what was asked — expected `on`,
+actual `off`, with the attributes at `None` — the entity was almost
+certainly commanded again before the check finished, rather than failing to
+apply the command.
+
+A newer command normally cancels the check in flight, but only when it
+reaches Action Control as a `call_service` event that the same rule
+matches. It doesn't when:
+
+- someone pressed a **physical switch**, or a remote is **bound directly**
+  to the device (Zigbee groups/bindings never reach Home Assistant as a
+  service call);
+- the command went through **`homeassistant.turn_on`/`turn_off`**, or a
+  scene or script that does — those are calls in the `homeassistant`
+  domain, so a rule watching `light` or `switch` doesn't match them.
+
+For the second case, add `homeassistant` to the rule's domains, or raise
+`check_delay` so the dust settles before the comparison.
+
 ## Known limitations
 
 - **Notification texts ship in English and French only**, picked from the
@@ -521,5 +542,13 @@ line. The newer run logs its own outcome instead.
   obsolete by then are dropped rather than queued, and a run that starts
   late still resolves immediately if the entity is already in the
   requested state.
+- **Only commands issued as service calls are seen.** A newer command
+  cancels a check in flight, but only if it produced a `call_service`
+  event a rule matches. A physical switch press, a remote bound straight to
+  the bulb, or `homeassistant.turn_off` (which belongs to the
+  `homeassistant` domain, not `light`/`switch`) are invisible — the entity
+  moves, the check knows nothing about it, and reports the mismatch as a
+  failure. See [When a rule reports a failure that isn't
+  one](#when-a-rule-reports-a-failure-that-isnt-one).
 - **The post-escalation replay is not verified**; it is the last action of
   the run.

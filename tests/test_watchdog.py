@@ -419,6 +419,46 @@ async def test_a_superseded_run_does_not_wait_for_the_lock(hass, mock_config_ent
         lock.release()
 
 
+async def test_a_run_superseded_during_the_check_reports_nothing(hass):
+    """An opposite command landing mid-check must not be reported as a
+    failure: the entity is where the newer command asked it to be."""
+    # retries=0, so the retry loop body never runs and the check goes straight
+    # from the comparison to the failure path.
+    entry = make_entry(make_light_rule(retries=0, check_delay=0.05))
+    engine = await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    notifications: list[dict] = []
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+    rule = next(iter(engine.rules.values()))
+
+    async def _newer_command() -> None:
+        # Well inside the 0.05 s the run spends asleep in check_delay.
+        await asyncio.sleep(0.01)
+        engine.next_run_token(rule.rule_id, "light.kitchen")
+
+    hass.async_create_task(_newer_command())
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert notifications == []
+    # A superseded run publishes nothing at all, so there may be no status yet;
+    # what matters is that it never reports a failure.
+    status = engine.rule_status.get(rule.rule_id)
+    assert status is None or status.status is not RuleStatus.FAILED
+
+
 # ---- retry backoff ----
 
 
