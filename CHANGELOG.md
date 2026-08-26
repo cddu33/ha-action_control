@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
-## [Unreleased]
+## [0.5.3]
 
 ### Added
 - `log_entity_info` is now exposed as an attribute of each rule's status
