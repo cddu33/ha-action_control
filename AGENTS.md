@@ -77,6 +77,10 @@ a broken diagram fails no test.
   `dev`.
 - Never reuse a merged PR for follow-up work — branch again from an
   up-to-date `main`.
+- Bump `manifest.json` and name the `CHANGELOG.md` section with that same
+  version **in the same commit**. Leaving the section as `[Unreleased]` means
+  someone has to remember to rename it at release time, and that has already
+  been forgotten once.
 - A release users can actually get needs **both** a `manifest.json` version
   bump **and** a matching GitHub release/tag. Without the release, HACS shows
   nothing. Record it in `CHANGELOG.md`.

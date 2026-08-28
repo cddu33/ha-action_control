@@ -36,6 +36,9 @@ class Rule:
     domains: list[str] = field(default_factory=list)
     services: list[str] = field(default_factory=list)  # empty = any service
     entity_id_pattern: str | None = None
+    # Several are needed in practice: entities exposed twice (a switch_as_x
+    # light over its switch) rarely share one prefix.
+    entity_id_exclude_patterns: list[str] = field(default_factory=list)
     name_pattern: str | None = None
     area_ids: list[str] = field(default_factory=list)
     label_ids: list[str] = field(default_factory=list)

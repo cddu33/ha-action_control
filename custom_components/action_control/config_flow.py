@@ -250,6 +250,9 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_ENABLED: user_input.get(c.CONF_ENABLED, True),
                     c.CONF_DOMAINS: user_input[c.CONF_DOMAINS],
                     c.CONF_ENTITY_ID_PATTERN: user_input.get(c.CONF_ENTITY_ID_PATTERN) or None,
+                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS: user_input.get(
+                        c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []
+                    ),
                     c.CONF_NAME_PATTERN: user_input.get(c.CONF_NAME_PATTERN) or None,
                     c.CONF_AREA_IDS: user_input.get(c.CONF_AREA_IDS, []),
                     c.CONF_LABEL_IDS: user_input.get(c.CONF_LABEL_IDS, []),
@@ -296,6 +299,12 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_ENTITY_ID_PATTERN,
                     default=self._draft.get(c.CONF_ENTITY_ID_PATTERN) or "",
                 ): str,
+                vol.Optional(
+                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS,
+                    default=self._draft.get(c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=[], multiple=True, custom_value=True)
+                ),
                 vol.Optional(
                     c.CONF_NAME_PATTERN, default=self._draft.get(c.CONF_NAME_PATTERN) or ""
                 ): str,

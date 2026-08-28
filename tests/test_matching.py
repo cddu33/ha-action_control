@@ -134,6 +134,35 @@ async def test_entity_matches_rule_entity_id_pattern(hass):
     assert not matching.entity_matches_rule(hass, rule, "cover.autre")
 
 
+async def test_entity_matches_rule_exclude_patterns(hass):
+    """The case this exists for: a switch also exposed as a light would
+    otherwise be verified twice for a single command."""
+    hass.states.async_set("switch.lumiere_salon", "off")
+    hass.states.async_set("light.lumiere_salon", "off")
+    hass.states.async_set("light.couloir", "off")
+
+    rule = Rule(
+        name="r",
+        domains=["light", "switch"],
+        entity_id_exclude_patterns=["light.lumiere_*", "light.salon_multiprise_*"],
+    )
+    assert matching.entity_matches_rule(hass, rule, "switch.lumiere_salon")
+    assert not matching.entity_matches_rule(hass, rule, "light.lumiere_salon")
+    # Anything the patterns don't name stays watched.
+    assert matching.entity_matches_rule(hass, rule, "light.couloir")
+
+
+async def test_exclude_patterns_win_over_the_include_pattern(hass):
+    hass.states.async_set("cover.volet_salon", "closed")
+    rule = Rule(
+        name="r",
+        domains=["cover"],
+        entity_id_pattern="cover.volet_*",
+        entity_id_exclude_patterns=["cover.volet_salon"],
+    )
+    assert not matching.entity_matches_rule(hass, rule, "cover.volet_salon")
+
+
 async def test_entity_matches_rule_name_pattern(hass):
     hass.states.async_set("light.x", "on", {"friendly_name": "Salon Lamp"})
     rule = Rule(name="r", domains=["light"], name_pattern="salon*")

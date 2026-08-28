@@ -185,6 +185,7 @@ de statut sur `idle`.
 | Domaines | Un ou plusieurs domaines surveillés par cette règle (ex. `light`, `switch`, `cover`). Obligatoire. La liste propose les domaines réellement présents dans votre instance, traduits, et accepte aussi un domaine saisi à la main. |
 | Services | Services surveillés dans ces domaines (ex. `turn_on`). Les suggestions correspondent à tous les services des domaines choisis. Laisser vide pour surveiller tous les services de ces domaines. |
 | Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. Sensible à la casse. |
+| Entity_id à exclure | Liste optionnelle de motifs glob ; une entité correspondant à l'un d'eux est écartée, quels que soient les autres filtres. Ajoutez-en autant que nécessaire — les entités qui se doublonnent partagent rarement un préfixe unique. Cas typique : un switch également exposé en light (*changer le type d'appareil* de Home Assistant), qui serait sinon vérifié et relancé deux fois à chaque commande. |
 | Motif de nom convivial | Motif glob optionnel comparé au nom de l'entité, sans tenir compte de la casse. |
 | Pièces / Étiquettes / Appareils | Filtres optionnels — une entité correspond si elle (ou son appareil) appartient à une des pièces/étiquettes/appareils sélectionnés. |
 

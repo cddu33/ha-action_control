@@ -177,6 +177,7 @@ flight and resets the status sensors to `idle`.
 | Domains | One or more domains this rule watches (e.g. `light`, `switch`, `cover`). Required. The picker lists the domains currently present in your instance, translated, and also accepts a domain typed by hand. |
 | Services | Services within those domains to watch (e.g. `turn_on`). Suggestions cover every service of the chosen domains. Leave empty to watch every service in those domains. |
 | Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) the `entity_id` must match. Case-sensitive. |
+| Entity ID patterns to exclude | Optional list of glob patterns; an entity matching any of them is dropped, whatever the other filters say. Add as many as you need — entities that duplicate one another rarely share a single prefix. Typical use: a switch also exposed as a light (Home Assistant's *change device type*), which would otherwise be verified and retried twice per command. |
 | Friendly name pattern | Optional glob pattern matched against the entity's name, case-insensitively. |
 | Areas / Labels / Devices | Optional filters — an entity matches if it (or its device) belongs to one of the selected areas/labels/devices. |
 

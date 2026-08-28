@@ -29,6 +29,7 @@
           "enabled": "Règle activée",
           "domains": "Domaines",
           "entity_id_pattern": "Entity_id (glob, ex. cover.volet_*)",
+          "entity_id_exclude_patterns": "Entity_id à exclure (glob ; ajoutez-en autant que nécessaire)",
           "name_pattern": "Nom (glob)",
           "area_ids": "Pièces",
           "label_ids": "Étiquettes",
