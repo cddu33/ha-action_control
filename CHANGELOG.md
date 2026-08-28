@@ -7,6 +7,13 @@ the published GitHub releases — which is what HACS offers users as an update.
 ## [Unreleased]
 
 ### Fixed
+- A rule's retry count was stored as the float the number selector hands back,
+  so it read as `retry 1/4.0` in the logs even though the field is declared as
+  an integer. Coerced on load, which also repairs rules already saved.
+
+## [0.5.4]
+
+### Fixed
 - A command that contradicted one still being verified — turning a light back
   off while the check for `turn_on` was running — was reported as a failed
   verification, with a warning and a notification, and could even fire the

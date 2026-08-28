@@ -96,6 +96,10 @@ class Rule:
                 value = list(value)
             elif isinstance(value, dict):
                 value = dict(value)
+            elif f.name == c.CONF_RETRIES:
+                # The number selector hands back a float, so a retry count
+                # reads as "4.0" everywhere it is shown without this.
+                value = int(value)
             kwargs[f.name] = value
         return cls(**kwargs)
 
