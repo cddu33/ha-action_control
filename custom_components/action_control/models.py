@@ -36,6 +36,9 @@ class Rule:
     domains: list[str] = field(default_factory=list)
     services: list[str] = field(default_factory=list)  # empty = any service
     entity_id_pattern: str | None = None
+    # Several are needed in practice: entities exposed twice (a switch_as_x
+    # light over its switch) rarely share one prefix.
+    entity_id_exclude_patterns: list[str] = field(default_factory=list)
     name_pattern: str | None = None
     area_ids: list[str] = field(default_factory=list)
     label_ids: list[str] = field(default_factory=list)
@@ -96,6 +99,10 @@ class Rule:
                 value = list(value)
             elif isinstance(value, dict):
                 value = dict(value)
+            elif f.name == c.CONF_RETRIES:
+                # The number selector hands back a float, so a retry count
+                # reads as "4.0" everywhere it is shown without this.
+                value = int(value)
             kwargs[f.name] = value
         return cls(**kwargs)
 

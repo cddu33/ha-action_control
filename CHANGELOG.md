@@ -4,7 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
-## [Unreleased]
+## [0.5.5]
+
+### Added
+- Targeting gained a list of **entity ID patterns to exclude**. An entity
+  matching any of them is dropped whatever the other filters say, which lets a
+  rule cover a whole domain minus the few entities that duplicate one another.
+  It takes a list rather than a single pattern on purpose: a switch also
+  exposed as a light (Home Assistant's *change device type*) is watched twice
+  per command, and those pairs rarely share one prefix.
+
+### Fixed
+- A rule's retry count was stored as the float the number selector hands back,
+  so it read as `retry 1/4.0` in the logs even though the field is declared as
+  an integer. Coerced on load, which also repairs rules already saved.
+
+## [0.5.4]
 
 ### Fixed
 - A command that contradicted one still being verified — turning a light back

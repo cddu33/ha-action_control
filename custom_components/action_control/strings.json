@@ -29,6 +29,7 @@
           "enabled": "Rule enabled",
           "domains": "Domains",
           "entity_id_pattern": "Entity ID pattern (glob, e.g. cover.volet_*)",
+          "entity_id_exclude_patterns": "Entity ID patterns to exclude (glob; add as many as you need)",
           "name_pattern": "Friendly name pattern (glob)",
           "area_ids": "Areas",
           "label_ids": "Labels",

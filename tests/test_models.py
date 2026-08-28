@@ -49,6 +49,15 @@ async def test_round_trip_fills_in_defaults_for_missing_keys(hass):
     assert restored.escalation_check_entity_id is None
 
 
+async def test_retries_is_stored_as_an_int(hass):
+    """The number selector yields a float, which otherwise shows up as
+    "retry 1/4.0" in the logs."""
+    restored = Rule.from_dict({"name": "Floaty", "retries": 4.0})
+
+    assert restored.retries == 4
+    assert isinstance(restored.retries, int)
+
+
 async def test_to_dict_does_not_alias_the_source_lists(hass):
     rule = Rule(name="r", domains=["light"], area_ids=["a1"])
     data = rule.to_dict()
