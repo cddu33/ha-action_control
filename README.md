@@ -128,8 +128,10 @@ settings those choices actually need:
   failing, with a minimum delay between two escalations — and optionally an
   entity to check to confirm it worked.
 
-Every step carries a *Back to the previous step* tick box, so a mistake
-made early on does not mean starting the rule over.
+The wizard ends on a **rule menu** — one button per section, plus *Save the
+rule*. That is where you correct a mistake made earlier, and where editing
+an existing rule starts, so changing one field does not mean walking every
+form again.
 
 See the [full documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md) for a field-by-field
 reference, ready-to-use recipes, debug logging, and known limitations.

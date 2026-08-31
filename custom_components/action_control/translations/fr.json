@@ -15,10 +15,31 @@
       "init": {
         "title": "Action Control",
         "menu_options": {
-          "add_rule": "Ajouter une règle",
+          "new_rule": "Ajouter une règle",
           "edit_rule_select": "Modifier une règle",
           "delete_rule_select": "Supprimer une règle",
           "global_settings": "Paramètres globaux"
+        }
+      },
+      "rule_menu": {
+        "title": "Règle – sections",
+        "description": "Choisissez une section à remplir ou à corriger ; vous revenez ici à chaque fois. Rien n'est écrit tant que vous n'enregistrez pas.",
+        "menu_options": {
+          "add_rule": "Ciblage",
+          "rule_exclude": "Ce qu'il faut laisser de côté",
+          "add_rule_services": "Services",
+          "rule_features": "Ce qu'elle doit faire",
+          "rule_verify": "Vérification et relances",
+          "rule_escalation": "Action de secours",
+          "rule_escalation_check": "Vérification de l'action de secours",
+          "rule_save": "Enregistrer la règle"
+        },
+        "menu_option_descriptions": {
+          "add_rule": "{name} — {domains}",
+          "rule_exclude": "{excluded} laissée(s) de côté",
+          "add_rule_services": "{services}",
+          "rule_verify": "{retries} relances",
+          "rule_escalation_check": "{escalation_check_entity_id}"
         }
       },
       "add_rule": {
@@ -33,8 +54,7 @@
           "area_ids": "Pièces",
           "label_ids": "Étiquettes",
           "device_ids": "Appareils",
-          "exclusions_enabled": "Laisser de côté certaines entités ou certains appareils",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "exclusions_enabled": "Laisser de côté certaines entités ou certains appareils"
         }
       },
       "rule_exclude": {
@@ -43,16 +63,14 @@
         "data": {
           "entity_id_exclude": "Entités à laisser de côté",
           "device_id_exclude": "Appareils à laisser de côté (retire toutes leurs entités)",
-          "entity_id_exclude_patterns": "Entity_id à exclure (glob, ex. light.salon_multiprise_*)",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "entity_id_exclude_patterns": "Entity_id à exclure (glob, ex. light.salon_multiprise_*)"
         }
       },
       "add_rule_services": {
         "title": "Règle – quels services",
         "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
         "data": {
-          "services": "Services (vide = tous les services du domaine)",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "services": "Services (vide = tous les services du domaine)"
         }
       },
       "rule_features": {
@@ -63,8 +81,7 @@
           "escalation_enabled": "Déclencher une action de secours en cas d'échec persistant",
           "log_entity_info": "Journaliser un résumé (entité, résultat, temps de réponse) pour cette règle au niveau info",
           "notify_persistent": "Notifier via une notification persistante",
-          "notify_service": "Notifier également via ce service notify",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "notify_service": "Notifier également via ce service notify"
         }
       },
       "rule_verify": {
@@ -78,8 +95,7 @@
           "retry_delay": "Délai entre les relances (secondes)",
           "retry_backoff": "Évolution du délai entre les relances",
           "change_attribute": "Attribut à surveiller pour détecter un changement (ex. current_position)",
-          "change_timeout": "Délai d'attente du changement (secondes)",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "change_timeout": "Délai d'attente du changement (secondes)"
         }
       },
       "rule_escalation": {
@@ -89,8 +105,7 @@
           "escalation_action": "Action d'escalade",
           "escalation_cooldown": "Délai minimum entre deux escalades (secondes)",
           "escalation_replay_delay": "Délai après l'escalade avant de rejouer la commande (secondes)",
-          "escalation_check_enabled": "Vérifier que l'action de secours a fonctionné avant de rejouer la commande",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "escalation_check_enabled": "Vérifier que l'action de secours a fonctionné avant de rejouer la commande"
         }
       },
       "rule_escalation_check": {
@@ -99,8 +114,7 @@
         "data": {
           "escalation_check_entity_id": "Entité à vérifier après l'action de secours",
           "escalation_check_state": "État qu'elle doit atteindre (ex. on)",
-          "escalation_check_delay": "Délai avant de la vérifier (secondes)",
-          "go_back": "◀ Revenir à l'étape précédente"
+          "escalation_check_delay": "Délai avant de la vérifier (secondes)"
         }
       },
       "edit_rule_select": {

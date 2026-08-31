@@ -132,8 +132,10 @@ les réglages que ces choix nécessitent réellement :
   deux escalades — et éventuellement une entité à contrôler pour confirmer
   qu'elle a fonctionné.
 
-Chaque étape propose une case *Revenir à l'étape précédente* : une erreur
-faite au début n'oblige plus à tout ressaisir.
+L'assistant se termine sur un **menu de la règle** — un bouton par section,
+plus *Enregistrer la règle*. C'est là qu'on corrige une erreur faite plus
+tôt, et c'est là que commence la modification d'une règle existante :
+changer un seul champ n'oblige plus à retraverser tous les formulaires.
 
 Voir la [documentation complète](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.fr.md) pour la
 référence détaillée de chaque champ, des exemples prêts à l'emploi, la

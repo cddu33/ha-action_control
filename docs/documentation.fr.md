@@ -139,8 +139,8 @@ menu propose :
 
 | Entrée de menu | Rôle |
 |---|---|
-| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → ce que la règle doit faire → les réglages correspondants. |
-| Modifier une règle | Le même assistant, prérempli avec la règle choisie. |
+| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → ce que la règle doit faire → les réglages correspondants, avec le menu de la règle pour finir. |
+| Modifier une règle | Directement le menu de la règle, prérempli avec la règle choisie. |
 | Supprimer une règle | Demande confirmation, puis supprime la règle et son capteur. |
 | Paramètres globaux | Interrupteur général et valeurs par défaut, voir [Paramètres globaux](#paramètres-globaux). |
 
@@ -151,13 +151,23 @@ se contente de relancer une commande tient en quatre étapes courtes ;
 l'escalade et sa vérification n'ajoutent des étapes que si vous les
 demandez.
 
-Chaque étape de l'assistant se termine par une case **Revenir à l'étape
-précédente** : cochez-la, validez, et vous revenez à l'étape d'avant — avec
-tout ce que vous aviez saisi, sur les deux étapes. Depuis la première
-étape, le retour ramène au menu et abandonne la règle.
+Le dernier écran est le **menu de la règle** : un bouton par section, avec
+sous chacun un résumé d'une ligne de ce qu'elle contient, plus *Enregistrer
+la règle*. Vous cliquez une section, vous la corrigez, et vous revenez au
+menu — c'est ainsi qu'on revient sur quelque chose. Rien n'est écrit tant
+que vous n'enregistrez pas : fermer la fenêtre abandonne la règle.
+
+Modifier une règle existante ouvre directement ce menu : changer un seul
+champ ne veut plus dire retraverser tous les formulaires.
+
+Le moteur de flux de Home Assistant n'a pas de navigation arrière, et une
+intégration ne peut pas poser de bouton dans un formulaire — un menu est la
+seule chose que l'interface rende sous forme de boutons cliquables. D'où
+cette forme.
 
 ```mermaid
 flowchart TD
+    N["Ajouter une règle"] --> A
     A["Ciblage<br/>nom, domaines, filtres"] --> A2{"Exclusions cochées ?"}
     A2 -->|non| B["Services"]
     A2 -->|oui| A3["Ce qu'il faut laisser de côté<br/>entités, appareils, motifs"]
@@ -168,12 +178,15 @@ flowchart TD
     D -->|Mouvement| F["Vérification et relances<br/>+ attribut à surveiller, délai d'attente"]
     E --> G{"Escalade cochée ?"}
     F --> G
-    G -->|non| Z["Règle enregistrée"]
+    G -->|non| Z
     G -->|oui| H["Action de secours<br/>action, recharge, délai de rejeu"]
     H --> I{"Vérifier l'action de secours ?"}
     I -->|non| Z
     I -->|oui| J["Vérification de l'action de secours<br/>entité, état attendu, délai"]
     J --> Z
+    Z["Menu de la règle<br/>un bouton par section + Enregistrer"] -.->|rouvrir une section| A
+    Z --> S["Enregistrée"]
+    ED["Modifier une règle"] --> Z
 ```
 
 Une seule instance de l'intégration est nécessaire — une seconde tentative

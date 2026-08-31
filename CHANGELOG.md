@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.1]
+
+### Changed
+- The *Back to the previous step* tick box added in 0.6.0 is gone. It was a
+  toggle you had to flip and then submit, and it read as a setting of the rule
+  rather than as navigation. It is replaced by a **rule menu**: one button per
+  section — Targeting, What to leave out, Services, What it should do,
+  Verification & retries, the recovery-action sections — each with a one-line
+  summary of what it holds, plus *Save the rule*. Open a section, correct it,
+  and you are back on the menu.
+  The guided pass for a new rule is unchanged; it now ends on that menu instead
+  of saving straight away, so a mistake made at the first step is fixed before
+  anything is written.
+  Home Assistant's flow engine has no back navigation, and an integration
+  cannot put a button on a form — `async_show_menu` is the only thing the
+  frontend renders as clickable buttons.
+- **Editing a rule opens that menu directly.** Changing one field no longer
+  means walking every form of the wizard again.
+
+### Fixed
+- The two gates that exist only in the wizard (*Leave out some entities or
+  devices*, *Verify the recovery action worked*) are not stored on the rule, so
+  a rule opened for editing had neither. The exclusion and recovery-check
+  sections were therefore missing from the menu for exactly the rules that use
+  them. They are now derived from the fields they map onto.
+
 ## [0.6.0]
 
 ### Added
