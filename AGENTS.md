@@ -53,12 +53,18 @@ and notifying when it doesn't.
   `add_rule_services` to stay the step immediately after `add_rule` **when
   exclusions are unticked** — which is the default, and what that test
   submits.
-- Stepping back is home-made: `data_entry_flow` has no back navigation, so
-  every wizard step carries a `go_back` field, stores its input in the draft
-  *before* validating, and hands over to `_step_back`. A new wizard step
-  needs three things or the back button lies: the field (via
-  `_wizard_schema`), the `go_back` check in its handler, and an entry in
-  `_wizard_order` — behind its gate, if it is conditional.
+- Navigation is home-made: `data_entry_flow` has no back navigation, and a
+  form cannot carry a button — a menu is the only thing the frontend renders
+  as buttons. So the sections hang off `rule_menu`, and `_after()` decides
+  between the next step (guided pass) and the menu. A new section needs three
+  things or it is unreachable: an entry in `_wizard_order()`, a label under
+  `rule_menu.menu_options` in the three translation files, and
+  `return await self._after("<step_id>")` at the end of its handler.
+- A gate that lives only in the wizard (`exclusions_enabled`,
+  `escalation_check_enabled`) is **absent from a draft loaded off a stored
+  rule**. Read it through `_gate()`, which falls back to the fields it maps
+  onto — reading `self._draft.get(...)` directly hides the section from the
+  menu for every rule that already uses it.
 - The anti-loop context registry is **deliberately not** persisted across
   restarts: a restart already kills every in-flight run.
 - Escalation cooldowns *are* persisted (`Store`), and are armed **before** the

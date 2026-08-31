@@ -15,10 +15,31 @@
       "init": {
         "title": "Action Control",
         "menu_options": {
-          "add_rule": "Add a rule",
+          "new_rule": "Add a rule",
           "edit_rule_select": "Edit a rule",
           "delete_rule_select": "Delete a rule",
           "global_settings": "Global settings"
+        }
+      },
+      "rule_menu": {
+        "title": "Rule – sections",
+        "description": "Pick a section to fill in or correct; you come back here each time. Nothing is written until you save.",
+        "menu_options": {
+          "add_rule": "Targeting",
+          "rule_exclude": "What to leave out",
+          "add_rule_services": "Services",
+          "rule_features": "What it should do",
+          "rule_verify": "Verification & retries",
+          "rule_escalation": "Recovery action",
+          "rule_escalation_check": "Verifying the recovery action",
+          "rule_save": "Save the rule"
+        },
+        "menu_option_descriptions": {
+          "add_rule": "{name} — {domains}",
+          "rule_exclude": "{excluded} left out",
+          "add_rule_services": "{services}",
+          "rule_verify": "{retries} retries",
+          "rule_escalation_check": "{escalation_check_entity_id}"
         }
       },
       "add_rule": {
@@ -33,8 +54,7 @@
           "area_ids": "Areas",
           "label_ids": "Labels",
           "device_ids": "Devices",
-          "exclusions_enabled": "Leave out some entities or devices",
-          "go_back": "◀ Back to the previous step"
+          "exclusions_enabled": "Leave out some entities or devices"
         }
       },
       "rule_exclude": {
@@ -43,16 +63,14 @@
         "data": {
           "entity_id_exclude": "Entities to leave out",
           "device_id_exclude": "Devices to leave out (removes every entity they expose)",
-          "entity_id_exclude_patterns": "Entity ID patterns to exclude (glob, e.g. light.salon_multiprise_*)",
-          "go_back": "◀ Back to the previous step"
+          "entity_id_exclude_patterns": "Entity ID patterns to exclude (glob, e.g. light.salon_multiprise_*)"
         }
       },
       "add_rule_services": {
         "title": "Rule – which services",
         "description": "Services actually available for {domains} are suggested below; leave empty to watch every service in these domains, or type a service name that isn't listed.",
         "data": {
-          "services": "Services (empty = any service in the domain)",
-          "go_back": "◀ Back to the previous step"
+          "services": "Services (empty = any service in the domain)"
         }
       },
       "rule_features": {
@@ -63,8 +81,7 @@
           "escalation_enabled": "Run a recovery action when it keeps failing",
           "log_entity_info": "Log a summary (entity, outcome, response time) for this rule at info level",
           "notify_persistent": "Notify via a persistent notification",
-          "notify_service": "Also notify via this notify service",
-          "go_back": "◀ Back to the previous step"
+          "notify_service": "Also notify via this notify service"
         }
       },
       "rule_verify": {
@@ -78,8 +95,7 @@
           "retry_delay": "Delay between retries (seconds)",
           "retry_backoff": "Delay growth between retries",
           "change_attribute": "Attribute to watch for a change (e.g. current_position)",
-          "change_timeout": "Timeout waiting for the change (seconds)",
-          "go_back": "◀ Back to the previous step"
+          "change_timeout": "Timeout waiting for the change (seconds)"
         }
       },
       "rule_escalation": {
@@ -89,8 +105,7 @@
           "escalation_action": "Escalation action",
           "escalation_cooldown": "Minimum time between two escalations (seconds)",
           "escalation_replay_delay": "Delay after escalation before replaying the command (seconds)",
-          "escalation_check_enabled": "Verify the recovery action worked before replaying the command",
-          "go_back": "◀ Back to the previous step"
+          "escalation_check_enabled": "Verify the recovery action worked before replaying the command"
         }
       },
       "rule_escalation_check": {
@@ -99,8 +114,7 @@
         "data": {
           "escalation_check_entity_id": "Entity to verify after the recovery action",
           "escalation_check_state": "State it should reach (e.g. on)",
-          "escalation_check_delay": "Delay before checking it (seconds)",
-          "go_back": "◀ Back to the previous step"
+          "escalation_check_delay": "Delay before checking it (seconds)"
         }
       },
       "edit_rule_select": {

@@ -133,8 +133,8 @@ Everything is configured from the integration's **Configure** button
 
 | Menu entry | What it does |
 |---|---|
-| Add a rule | Wizard: what to watch → which services → what it should do → the settings those choices need. |
-| Edit a rule | The same wizard, pre-filled with the selected rule. |
+| Add a rule | Wizard: what to watch → which services → what it should do → the settings those choices need, ending on the rule menu. |
+| Edit a rule | Straight to the rule menu, pre-filled with the selected rule. |
 | Delete a rule | Asks for confirmation, then removes the rule and its sensor. |
 | Global settings | Master switch and default values, see [Global settings](#global-settings). |
 
@@ -144,13 +144,22 @@ steps show the matching settings — nothing else. A rule that just retries
 a command is four short steps; escalation and its verification only add
 steps when you ask for them.
 
-Every step of the wizard ends with a **Back to the previous step** tick
-box: tick it, submit, and you land on the step before — with everything you
-had typed still in place, on both steps. Going back from the first step
-returns to the menu and abandons the rule.
+The last screen is the **rule menu**: one button per section, each with a
+one-line summary of what it holds, plus *Save the rule*. Click a section,
+correct it, and you are back on the menu — that is how you go back to
+something. Nothing is written until you save, so closing the dialog
+abandons the rule.
+
+Editing an existing rule opens that menu directly, so changing one field no
+longer means walking every form again.
+
+Home Assistant's flow engine has no back navigation of its own, and an
+integration cannot put a button on a form — a menu is the only thing the
+interface renders as clickable buttons. Hence this shape.
 
 ```mermaid
 flowchart TD
+    N["Add a rule"] --> A
     A["Targeting<br/>name, domains, filters"] --> A2{"Exclusions ticked?"}
     A2 -->|no| B["Services"]
     A2 -->|yes| A3["What to leave out<br/>entities, devices, patterns"]
@@ -161,12 +170,15 @@ flowchart TD
     D -->|Movement| F["Verification & retries<br/>+ attribute to watch, timeout"]
     E --> G{"Escalation ticked?"}
     F --> G
-    G -->|no| Z["Rule saved"]
+    G -->|no| Z
     G -->|yes| H["Recovery action<br/>action, cooldown, replay delay"]
     H --> I{"Verify the recovery action?"}
     I -->|no| Z
     I -->|yes| J["Verifying the recovery action<br/>entity, expected state, delay"]
     J --> Z
+    Z["Rule menu<br/>one button per section + Save"] -.->|reopen a section| A
+    Z --> S["Saved"]
+    ED["Edit a rule"] --> Z
 ```
 
 Only one instance of the integration is needed — a second setup attempt is
