@@ -44,6 +44,10 @@ VERIFICATION_MODE_DELAY = "delay"
 VERIFICATION_MODE_MOVEMENT = "movement"
 VERIFICATION_MODES = (VERIFICATION_MODE_DELAY, VERIFICATION_MODE_MOVEMENT)
 CONF_ESCALATION_CHECK_ENABLED = "escalation_check_enabled"
+CONF_EXCLUSIONS_ENABLED = "exclusions_enabled"
+# Offered on every wizard step: data_entry_flow has no back primitive, so
+# stepping back is a field the step reads and acts on itself.
+CONF_GO_BACK = "go_back"
 
 # rule dict keys (also dataclass field names, kept identical on purpose)
 CONF_RULE_ID = "rule_id"
@@ -54,6 +58,8 @@ CONF_DOMAINS = "domains"
 CONF_SERVICES = "services"
 CONF_ENTITY_ID_PATTERN = "entity_id_pattern"
 CONF_ENTITY_ID_EXCLUDE_PATTERNS = "entity_id_exclude_patterns"
+CONF_ENTITY_ID_EXCLUDE = "entity_id_exclude"
+CONF_DEVICE_ID_EXCLUDE = "device_id_exclude"
 CONF_NAME_PATTERN = "name_pattern"
 CONF_AREA_IDS = "area_ids"
 CONF_LABEL_IDS = "label_ids"

@@ -43,6 +43,9 @@ flowchart TD
   de domaine/service, pas seulement light/switch/cover.
 - **Ciblage personnalisable par règle** — domaine(s), service(s), motif glob
   d'`entity_id`, motif de nom, pièces, étiquettes et/ou appareils.
+- **Exclusions** — laissez des entités de côté en les choisissant dans une
+  liste, par appareil, ou par motif glob. Utilité principale : un switch
+  également exposé en light serait sinon vérifié deux fois par commande.
 - **Vérification avec tolérance** — tolérance scalaire (ex. `brightness`
   ±5), tolérance élément par élément pour les attributs de type liste
   (`rgb_color`, `xy_color`), égalité stricte pour le texte et les booléens.
@@ -115,6 +118,8 @@ les réglages que ces choix nécessitent réellement :
 
 - **Ciblage** : domaine(s), service(s), motif d'`entity_id`, motif de nom,
   pièces, étiquettes, appareils.
+- **Ce qu'il faut laisser de côté** (seulement si coché) : des entités
+  choisies dans une liste, des appareils, ou des motifs glob.
 - **Ce qu'elle doit faire** : comment vérifier (Délai ou Mouvement),
   faut-il une action de secours, journalisation et notifications.
 - **Vérification** : attributs à vérifier avec tolérance (ex. `brightness`,
@@ -126,6 +131,9 @@ les réglages que ces choix nécessitent réellement :
   vérification échoue de manière persistante, avec un délai minimum entre
   deux escalades — et éventuellement une entité à contrôler pour confirmer
   qu'elle a fonctionné.
+
+Chaque étape propose une case *Revenir à l'étape précédente* : une erreur
+faite au début n'oblige plus à tout ressaisir.
 
 Voir la [documentation complète](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.fr.md) pour la
 référence détaillée de chaque champ, des exemples prêts à l'emploi, la

@@ -151,9 +151,17 @@ se contente de relancer une commande tient en quatre étapes courtes ;
 l'escalade et sa vérification n'ajoutent des étapes que si vous les
 demandez.
 
+Chaque étape de l'assistant se termine par une case **Revenir à l'étape
+précédente** : cochez-la, validez, et vous revenez à l'étape d'avant — avec
+tout ce que vous aviez saisi, sur les deux étapes. Depuis la première
+étape, le retour ramène au menu et abandonne la règle.
+
 ```mermaid
 flowchart TD
-    A["Ciblage<br/>nom, domaines, filtres"] --> B["Services"]
+    A["Ciblage<br/>nom, domaines, filtres"] --> A2{"Exclusions cochées ?"}
+    A2 -->|non| B["Services"]
+    A2 -->|oui| A3["Ce qu'il faut laisser de côté<br/>entités, appareils, motifs"]
+    A3 --> B
     B --> C["Ce qu'elle doit faire<br/>mode, escalade, journal, notifications"]
     C --> D{"Mode de vérification"}
     D -->|Délai| E["Vérification et relances<br/>+ délai avant la 1re vérification"]
@@ -185,15 +193,35 @@ de statut sur `idle`.
 | Domaines | Un ou plusieurs domaines surveillés par cette règle (ex. `light`, `switch`, `cover`). Obligatoire. La liste propose les domaines réellement présents dans votre instance, traduits, et accepte aussi un domaine saisi à la main. |
 | Services | Services surveillés dans ces domaines (ex. `turn_on`). Les suggestions correspondent à tous les services des domaines choisis. Laisser vide pour surveiller tous les services de ces domaines. |
 | Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. Sensible à la casse. |
-| Entity_id à exclure | Liste optionnelle de motifs glob ; une entité correspondant à l'un d'eux est écartée, quels que soient les autres filtres. Ajoutez-en autant que nécessaire — les entités qui se doublonnent partagent rarement un préfixe unique. Cas typique : un switch également exposé en light (*changer le type d'appareil* de Home Assistant), qui serait sinon vérifié et relancé deux fois à chaque commande. |
 | Motif de nom convivial | Motif glob optionnel comparé au nom de l'entité, sans tenir compte de la casse. |
 | Pièces / Étiquettes / Appareils | Filtres optionnels — une entité correspond si elle (ou son appareil) appartient à une des pièces/étiquettes/appareils sélectionnés. |
+| Laisser de côté certaines entités ou certains appareils | Décoché, l'étape d'exclusion est sautée ; le décocher sur une règle existante efface aussi ce qu'elle excluait. |
 
 Les filtres se cumulent (ET logique) : une entité doit satisfaire tous
 ceux qui sont renseignés. Une règle sans aucun filtre
 motif/pièce/étiquette/appareil correspond à toutes les entités du/des
 domaine(s)/service(s) choisis — par exemple « surveiller toutes les
 lumières ».
+
+### Ce qu'il faut laisser de côté
+
+Affichée seulement si *Laisser de côté certaines entités ou certains
+appareils* est coché à l'étape de ciblage. Les exclusions l'emportent sur
+tous les filtres d'inclusion ci-dessus : c'est ce qui permet à une règle de
+couvrir un domaine entier moins quelques entités.
+
+| Champ | Description |
+|---|---|
+| Entités à laisser de côté | À choisir dans une liste, limitée aux domaines de la règle. C'est le moyen direct et lisible d'écarter une entité précise. |
+| Appareils à laisser de côté | Retire **toutes** les entités de cet appareil. Pour un « ne jamais rien surveiller sur cet appareil » — une passerelle que vous savez capricieuse, par exemple. |
+| Entity_id à exclure | Motifs glob (ex. `light.salon_multiprise_*`), pour les cas plus larges. Ajoutez-en autant que nécessaire — les entités qui se doublonnent partagent rarement un préfixe unique. |
+
+Le cas qui a fait naître cette étape : un switch également exposé en light
+(*changer le type d'appareil* de Home Assistant), vérifié et relancé deux
+fois pour une seule commande. **Excluez l'entité en double, pas son
+appareil** : `switch_as_x` rattache le `light.x` dérivé au même appareil
+que `switch.x`, donc exclure l'appareil retirerait les deux et la règle ne
+surveillerait plus rien.
 
 ### Ce qu'elle doit faire
 

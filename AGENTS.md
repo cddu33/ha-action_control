@@ -36,10 +36,11 @@ and notifying when it doesn't.
 
 ## Traps specific to this codebase
 
-- `CONF_VERIFICATION_MODE` and `CONF_ESCALATION_CHECK_ENABLED` are
-  **wizard-only keys**. They are not fields on `Rule` and must never be
-  persisted; they map onto the real fields `wait_for_change` and
-  `escalation_check_entity_id`.
+- `CONF_VERIFICATION_MODE`, `CONF_ESCALATION_CHECK_ENABLED`,
+  `CONF_EXCLUSIONS_ENABLED` and `CONF_GO_BACK` are **wizard-only keys**.
+  They are not fields on `Rule` and must never be persisted; the first three
+  gate which steps run and map onto the real fields `wait_for_change`,
+  `escalation_check_entity_id` and the three exclusion lists.
 - `Rule.from_dict` skips keys that are **absent or `None`**, falling back to
   the dataclass default. That is a useful safety net for old stored rules,
   but it also means a field the wizard stops collecting degrades silently —
@@ -49,7 +50,15 @@ and notifying when it doesn't.
   breaks it, and the worst case fails late on an unrelated assertion rather
   than at the step itself.
 - `test_services_step_offers_the_chosen_domains_registered_services` requires
-  `add_rule_services` to stay the step **immediately** after `add_rule`.
+  `add_rule_services` to stay the step immediately after `add_rule` **when
+  exclusions are unticked** — which is the default, and what that test
+  submits.
+- Stepping back is home-made: `data_entry_flow` has no back navigation, so
+  every wizard step carries a `go_back` field, stores its input in the draft
+  *before* validating, and hands over to `_step_back`. A new wizard step
+  needs three things or the back button lies: the field (via
+  `_wizard_schema`), the `go_back` check in its handler, and an entry in
+  `_wizard_order` — behind its gate, if it is conditional.
 - The anti-loop context registry is **deliberately not** persisted across
   restarts: a restart already kills every in-flight run.
 - Escalation cooldowns *are* persisted (`Store`), and are armed **before** the

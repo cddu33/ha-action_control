@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import (
     DeviceSelector,
     DeviceSelectorConfig,
     EntitySelector,
+    EntitySelectorConfig,
     LabelSelector,
     LabelSelectorConfig,
     NumberSelector,
@@ -134,6 +135,49 @@ class ActionControlOptionsFlow(OptionsFlow):
         if entity_id:
             ent_reg.async_remove(entity_id)
 
+    # ---- wizard navigation ----
+
+    def _wizard_order(self) -> list[str]:
+        """The steps this draft actually goes through, in order.
+
+        The conditional steps are in it only when their gate is ticked, so
+        stepping back never lands on a form the user was never shown.
+        """
+        order = ["add_rule"]
+        if self._draft.get(c.CONF_EXCLUSIONS_ENABLED):
+            order.append("rule_exclude")
+        order += ["add_rule_services", "rule_features", "rule_verify"]
+        if self._draft.get(c.CONF_ESCALATION_ENABLED):
+            order.append("rule_escalation")
+            if self._draft.get(c.CONF_ESCALATION_CHECK_ENABLED):
+                order.append("rule_escalation_check")
+        return order
+
+    async def _step_back(self, step_id: str) -> Any:
+        """Re-enter the step before `step_id`.
+
+        Home Assistant's flow engine has no back navigation of its own, so
+        every wizard step carries a `go_back` field and hands over here. The
+        caller stores its input in the draft before calling, unvalidated, so
+        going back and forth again loses nothing.
+        """
+        order = self._wizard_order()
+        index = order.index(step_id)
+        if index:
+            return await getattr(self, f"async_step_{order[index - 1]}")()
+        # Leaving the wizard from its first step: drop the draft, otherwise
+        # picking "Add a rule" from the menu would silently keep editing the
+        # rule this wizard was opened on.
+        self._editing_rule_id = None
+        self._draft = {}
+        return await self.async_step_init()
+
+    @staticmethod
+    def _wizard_schema(fields: dict[Any, Any]) -> vol.Schema:
+        """Close a wizard step's schema with the step-back control."""
+        fields[vol.Optional(c.CONF_GO_BACK, default=False)] = BooleanSelector()
+        return vol.Schema(fields)
+
     # ---- global settings ----
 
     async def async_step_global_settings(
@@ -250,18 +294,29 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_ENABLED: user_input.get(c.CONF_ENABLED, True),
                     c.CONF_DOMAINS: user_input[c.CONF_DOMAINS],
                     c.CONF_ENTITY_ID_PATTERN: user_input.get(c.CONF_ENTITY_ID_PATTERN) or None,
-                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS: user_input.get(
-                        c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []
-                    ),
                     c.CONF_NAME_PATTERN: user_input.get(c.CONF_NAME_PATTERN) or None,
                     c.CONF_AREA_IDS: user_input.get(c.CONF_AREA_IDS, []),
                     c.CONF_LABEL_IDS: user_input.get(c.CONF_LABEL_IDS, []),
                     c.CONF_DEVICE_IDS: user_input.get(c.CONF_DEVICE_IDS, []),
+                    c.CONF_EXCLUSIONS_ENABLED: user_input[c.CONF_EXCLUSIONS_ENABLED],
                 }
             )
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("add_rule")
             # vol.Required only guarantees the key is present, not that the
             # list has anything in it -- a rule with no domain never matches.
             if self._draft[c.CONF_DOMAINS]:
+                if self._draft[c.CONF_EXCLUSIONS_ENABLED]:
+                    return await self.async_step_rule_exclude()
+                # Unticking it clears what was excluded, rather than leaving a
+                # filter in force that no step of the wizard shows any more.
+                self._draft.update(
+                    {
+                        c.CONF_ENTITY_ID_EXCLUDE: [],
+                        c.CONF_DEVICE_ID_EXCLUDE: [],
+                        c.CONF_ENTITY_ID_EXCLUDE_PATTERNS: [],
+                    }
+                )
                 return await self.async_step_add_rule_services()
             errors[c.CONF_DOMAINS] = "domains_required"
 
@@ -279,7 +334,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             SelectOptionDict(value=domain, label=titles.get(f"component.{domain}.title", domain))
             for domain in known_domains
         ]
-        schema = vol.Schema(
+        schema = self._wizard_schema(
             {
                 vol.Required(c.CONF_NAME, default=self._draft.get(c.CONF_NAME, "")): str,
                 vol.Required(
@@ -300,12 +355,6 @@ class ActionControlOptionsFlow(OptionsFlow):
                     default=self._draft.get(c.CONF_ENTITY_ID_PATTERN) or "",
                 ): str,
                 vol.Optional(
-                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS,
-                    default=self._draft.get(c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []),
-                ): SelectSelector(
-                    SelectSelectorConfig(options=[], multiple=True, custom_value=True)
-                ),
-                vol.Optional(
                     c.CONF_NAME_PATTERN, default=self._draft.get(c.CONF_NAME_PATTERN) or ""
                 ): str,
                 vol.Optional(
@@ -317,17 +366,94 @@ class ActionControlOptionsFlow(OptionsFlow):
                 vol.Optional(
                     c.CONF_DEVICE_IDS, default=self._draft.get(c.CONF_DEVICE_IDS, [])
                 ): DeviceSelector(DeviceSelectorConfig(multiple=True)),
+                vol.Required(
+                    c.CONF_EXCLUSIONS_ENABLED, default=self._exclusions_default()
+                ): BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="add_rule", data_schema=schema, errors=errors)
 
-    # ---- add / edit: page 1b - which services, now that domains are known ----
+    # ---- add / edit: page 1b - what to leave out ----
+
+    def _exclusions_default(self) -> bool:
+        """Tick the gate when the rule already excludes something."""
+        if c.CONF_EXCLUSIONS_ENABLED in self._draft:
+            return bool(self._draft[c.CONF_EXCLUSIONS_ENABLED])
+        return any(
+            self._draft.get(key)
+            for key in (
+                c.CONF_ENTITY_ID_EXCLUDE,
+                c.CONF_DEVICE_ID_EXCLUDE,
+                c.CONF_ENTITY_ID_EXCLUDE_PATTERNS,
+            )
+        )
+
+    async def async_step_rule_exclude(
+        self, user_input: dict[str, Any] | None = None
+    ) -> Any:
+        """Entities and devices this rule must never watch."""
+        if user_input is not None:
+            self._draft.update(
+                {
+                    c.CONF_ENTITY_ID_EXCLUDE: user_input.get(
+                        c.CONF_ENTITY_ID_EXCLUDE, []
+                    ),
+                    c.CONF_DEVICE_ID_EXCLUDE: user_input.get(
+                        c.CONF_DEVICE_ID_EXCLUDE, []
+                    ),
+                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS: user_input.get(
+                        c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []
+                    ),
+                }
+            )
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("rule_exclude")
+            return await self.async_step_add_rule_services()
+
+        domains = self._draft.get(c.CONF_DOMAINS, [])
+        # The picker is limited to the domains the rule watches -- that is what
+        # makes it readable -- so an exclusion left over from a wider version of
+        # the rule has to go, or the form would refuse to submit. It matched
+        # nothing anyway: an entity outside those domains is already out.
+        excluded = [
+            entity_id
+            for entity_id in self._draft.get(c.CONF_ENTITY_ID_EXCLUDE, [])
+            if entity_id.split(".", 1)[0] in domains
+        ]
+        schema = self._wizard_schema(
+            {
+                vol.Optional(
+                    c.CONF_ENTITY_ID_EXCLUDE, default=excluded
+                ): EntitySelector(
+                    EntitySelectorConfig(domain=domains, multiple=True)
+                ),
+                vol.Optional(
+                    c.CONF_DEVICE_ID_EXCLUDE,
+                    default=self._draft.get(c.CONF_DEVICE_ID_EXCLUDE, []),
+                ): DeviceSelector(DeviceSelectorConfig(multiple=True)),
+                vol.Optional(
+                    c.CONF_ENTITY_ID_EXCLUDE_PATTERNS,
+                    default=self._draft.get(c.CONF_ENTITY_ID_EXCLUDE_PATTERNS, []),
+                ): SelectSelector(
+                    SelectSelectorConfig(options=[], multiple=True, custom_value=True)
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="rule_exclude",
+            data_schema=schema,
+            description_placeholders={"domains": ", ".join(domains)},
+        )
+
+    # ---- add / edit: page 1c - which services, now that domains are known ----
 
     async def async_step_add_rule_services(
         self, user_input: dict[str, Any] | None = None
     ) -> Any:
         if user_input is not None:
             self._draft[c.CONF_SERVICES] = user_input.get(c.CONF_SERVICES, [])
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("add_rule_services")
             return await self.async_step_rule_features()
 
         # Populated from the services Home Assistant actually registers for
@@ -339,7 +465,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         for domain in domains:
             available_services.update(self.hass.services.async_services().get(domain, {}))
 
-        schema = vol.Schema(
+        schema = self._wizard_schema(
             {
                 vol.Optional(
                     c.CONF_SERVICES, default=self._draft.get(c.CONF_SERVICES, [])
@@ -384,6 +510,8 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_NOTIFY_SERVICE: user_input.get(c.CONF_NOTIFY_SERVICE) or None,
                 }
             )
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("rule_features")
             return await self.async_step_rule_verify()
 
         preset = self._preset_for_draft()
@@ -391,7 +519,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             c.CONF_WAIT_FOR_CHANGE, preset.get("wait_for_change", False)
         )
         notify_services = sorted(self.hass.services.async_services().get("notify", {}))
-        schema = vol.Schema(
+        schema = self._wizard_schema(
             {
                 vol.Required(
                     c.CONF_VERIFICATION_MODE,
@@ -473,6 +601,8 @@ class ActionControlOptionsFlow(OptionsFlow):
                     errors[c.CONF_CHANGE_ATTRIBUTE] = "change_attribute_required"
             else:
                 self._draft[c.CONF_CHECK_DELAY] = user_input[c.CONF_CHECK_DELAY]
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("rule_verify")
             if invalid:
                 errors[c.CONF_TOLERANCES] = "invalid_tolerances"
                 tolerances_text = user_input.get(c.CONF_TOLERANCES) or ""
@@ -562,7 +692,7 @@ class ActionControlOptionsFlow(OptionsFlow):
                 }
             )
         return self.async_show_form(
-            step_id="rule_verify", data_schema=vol.Schema(fields), errors=errors
+            step_id="rule_verify", data_schema=self._wizard_schema(fields), errors=errors
         )
 
     # ---- add / edit: page 4 - escalation (only when it is enabled) ----
@@ -579,14 +709,19 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_ESCALATION_REPLAY_DELAY: user_input[
                         c.CONF_ESCALATION_REPLAY_DELAY
                     ],
+                    c.CONF_ESCALATION_CHECK_ENABLED: user_input[
+                        c.CONF_ESCALATION_CHECK_ENABLED
+                    ],
                 }
             )
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("rule_escalation")
             if user_input[c.CONF_ESCALATION_CHECK_ENABLED]:
                 return await self.async_step_rule_escalation_check()
             self._draft[c.CONF_ESCALATION_CHECK_ENTITY_ID] = None
             return self._finalize_rule()
 
-        schema = vol.Schema(
+        schema = self._wizard_schema(
             {
                 vol.Optional(
                     c.CONF_ESCALATION_ACTION,
@@ -635,6 +770,8 @@ class ActionControlOptionsFlow(OptionsFlow):
                     ],
                 }
             )
+            if user_input.get(c.CONF_GO_BACK):
+                return await self._step_back("rule_escalation_check")
             # Both are needed, otherwise the check silently does nothing.
             if entity_id and state:
                 return self._finalize_rule()
@@ -652,7 +789,7 @@ class ActionControlOptionsFlow(OptionsFlow):
                 "suggested_value": self._draft.get(c.CONF_ESCALATION_CHECK_ENTITY_ID)
             },
         )
-        schema = vol.Schema(
+        schema = self._wizard_schema(
             {
                 check_entity_key: EntitySelector(),
                 vol.Optional(

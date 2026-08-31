@@ -36,8 +36,12 @@ class Rule:
     domains: list[str] = field(default_factory=list)
     services: list[str] = field(default_factory=list)  # empty = any service
     entity_id_pattern: str | None = None
-    # Several are needed in practice: entities exposed twice (a switch_as_x
-    # light over its switch) rarely share one prefix.
+    # Exclusions, applied before every include filter. Picking entities by hand
+    # covers the common case; the device list drops everything a device exposes;
+    # several patterns are needed in practice, since entities exposed twice (a
+    # switch_as_x light over its switch) rarely share one prefix.
+    entity_id_exclude: list[str] = field(default_factory=list)
+    device_id_exclude: list[str] = field(default_factory=list)
     entity_id_exclude_patterns: list[str] = field(default_factory=list)
     name_pattern: str | None = None
     area_ids: list[str] = field(default_factory=list)
