@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.0]
+
+### Added
+- Exclusions are now a step of their own, shown only when you tick *Leave
+  out some entities or devices* on the targeting step. It offers three ways
+  to drop something: **picking entities from a list** (restricted to the
+  rule's domains, which is what makes it readable), **picking devices**
+  (every entity they expose goes), and the glob patterns that were there
+  before, now for the wider cases. Unticking the box on an existing rule
+  clears what it excluded, rather than leaving a filter in force that no
+  step shows any more.
+- Every step of the rule wizard ends with a **Back to the previous step**
+  tick box. Home Assistant's flow engine has no back navigation of its own,
+  so each step carries the control and hands over to the step before it —
+  skipping the conditional steps that were never shown, and keeping
+  everything typed on both steps. From the first step it returns to the
+  menu and abandons the rule.
+
+### Changed
+- The list of exclusion patterns left the targeting form, which had grown
+  to eight fields, for the new step.
+
+### Notes
+- Excluding a *device* is not the way to split a switch also exposed as a
+  light: `switch_as_x` attaches the derived entity to the same device as
+  the switch it wraps, so the exclusion would drop both. Exclude the
+  duplicate *entity*. Both the wizard and the documentation say so.
+
 ## [0.5.5]
 
 ### Added

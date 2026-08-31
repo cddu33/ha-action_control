@@ -414,3 +414,196 @@ async def test_global_settings(hass):
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options["global"]["enabled"] is False
     assert entry.options["global"]["default_retries"] == 3
+
+
+async def test_exclusions_are_skipped_and_cleared_when_unticked(hass):
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"name": "No exclusion", "domains": ["switch"], "exclusions_enabled": False},
+    )
+    assert result["step_id"] == "add_rule_services"
+
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    rule = next(iter(entry.options[OPT_RULES].values()))
+    assert rule["entity_id_exclude"] == []
+    assert rule["device_id_exclude"] == []
+    assert rule["entity_id_exclude_patterns"] == []
+    # The gate is a wizard key, it never reaches the stored rule.
+    assert "exclusions_enabled" not in rule
+
+
+async def test_exclusion_step_saves_entities_devices_and_patterns(hass):
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "name": "With exclusions",
+            "domains": ["switch"],
+            "exclusions_enabled": True,
+        },
+    )
+    assert result["step_id"] == "rule_exclude"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "entity_id_exclude": ["switch.duplicate"],
+            "device_id_exclude": ["some-device-id"],
+            "entity_id_exclude_patterns": ["switch.multiprise_*"],
+        },
+    )
+    assert result["step_id"] == "add_rule_services"
+
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+    rule = next(iter(entry.options[OPT_RULES].values()))
+    assert rule["entity_id_exclude"] == ["switch.duplicate"]
+    assert rule["device_id_exclude"] == ["some-device-id"]
+    assert rule["entity_id_exclude_patterns"] == ["switch.multiprise_*"]
+
+
+async def test_the_exclusion_picker_is_limited_to_the_rules_domains(hass):
+    """The domain filter is what makes the list readable in the first place."""
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"name": "Scoped", "domains": ["switch"], "exclusions_enabled": True},
+    )
+
+    schema = result["data_schema"].schema
+    selector = next(
+        value for key, value in schema.items() if key == "entity_id_exclude"
+    )
+    assert selector.config["domain"] == ["switch"]
+
+
+async def test_editing_a_rule_prefills_and_can_drop_its_exclusions(hass):
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": True},
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"entity_id_exclude": ["switch.duplicate"]}
+    )
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    rule_id = next(iter(entry.options[OPT_RULES]))
+
+    # Re-opening the rule tickes the gate back on by itself...
+    result = await _select_menu(hass, entry, "edit_rule_select")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"rule_id": rule_id}
+    )
+    assert result["data_schema"]({"name": "Excluding", "domains": ["switch"]})[
+        "exclusions_enabled"
+    ]
+
+    # ... and unticking it drops what was excluded, rather than leaving a
+    # filter in force that no step of the wizard shows any more.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": False},
+    )
+    assert result["step_id"] == "add_rule_services"
+    for _ in range(3):
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+
+    assert entry.options[OPT_RULES][rule_id]["entity_id_exclude"] == []
+
+
+async def test_going_back_returns_to_the_previous_step_keeping_the_input(hass):
+    entry = await _create_entry(hass)
+    result = await _start_rule(hass, entry, name="Back and forth")
+    assert result["step_id"] == "rule_features"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"verification_mode": "delay"}
+    )
+    assert result["step_id"] == "rule_verify"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"retries": 7, "go_back": True}
+    )
+    assert result["step_id"] == "rule_features"
+
+    # Forward again: what was typed on the step we left is still there.
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"verification_mode": "delay"}
+    )
+    assert result["step_id"] == "rule_verify"
+    defaults = result["data_schema"]({})
+    assert defaults["retries"] == 7
+
+
+async def test_going_back_skips_the_exclusion_step_when_it_was_unticked(hass):
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {"name": "Skipping", "domains": ["switch"], "exclusions_enabled": False},
+    )
+    assert result["step_id"] == "add_rule_services"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"go_back": True}
+    )
+    assert result["step_id"] == "add_rule"
+
+
+async def test_going_back_from_the_first_step_returns_to_the_menu(hass):
+    """And drops the draft, so the menu's "Add a rule" starts a new rule."""
+    entry = await _create_entry(hass)
+    result = await _select_menu(hass, entry, "add_rule")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"name": "Abandoned", "domains": ["switch"]}
+    )
+    assert result["step_id"] == "add_rule_services"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"go_back": True}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"go_back": True}
+    )
+    assert result["type"] == FlowResultType.MENU
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "add_rule"}
+    )
+    assert result["data_schema"]({"domains": []})["name"] == ""
+    assert not entry.options[OPT_RULES]
+
+
+async def test_going_back_from_the_last_conditional_step(hass):
+    """Both escalation gates are on, so the way back runs through them."""
+    entry = await _create_entry(hass)
+    result = await _start_rule(hass, entry, name="Deep")
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"escalation_enabled": True}
+    )
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"escalation_check_enabled": True}
+    )
+    assert result["step_id"] == "rule_escalation_check"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"go_back": True}
+    )
+    assert result["step_id"] == "rule_escalation"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"go_back": True}
+    )
+    assert result["step_id"] == "rule_verify"

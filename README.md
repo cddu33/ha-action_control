@@ -44,6 +44,9 @@ flowchart TD
   just light/switch/cover.
 - **Customizable targeting per rule** — domain(s), service(s), `entity_id`
   glob pattern, friendly-name pattern, areas, labels, and/or devices.
+- **Exclusions** — leave entities out of a rule by picking them from a
+  list, by device, or by glob pattern. What it is mostly for: a switch also
+  exposed as a light would otherwise be verified twice per command.
 - **Tolerance-based verification** — scalar tolerance (e.g. `brightness`
   ±5), element-wise tolerance for list attributes (`rgb_color`,
   `xy_color`), exact match for text/boolean attributes.
@@ -112,6 +115,8 @@ settings those choices actually need:
 
 - **Targeting**: domain(s), service(s), `entity_id` pattern, name pattern,
   areas, labels, devices.
+- **What to leave out** (only if ticked): entities picked from a list,
+  devices, or glob patterns.
 - **What it should do**: how to verify (delay or movement), whether to run
   a recovery action, logging and notifications.
 - **Verification**: attributes to check with tolerance (e.g. `brightness`,
@@ -122,6 +127,9 @@ settings those choices actually need:
 - **Recovery action** (only if ticked): what to run when verification keeps
   failing, with a minimum delay between two escalations — and optionally an
   entity to check to confirm it worked.
+
+Every step carries a *Back to the previous step* tick box, so a mistake
+made early on does not mean starting the rule over.
 
 See the [full documentation](https://github.com/cddu33/ha-action_control/blob/main/docs/documentation.md) for a field-by-field
 reference, ready-to-use recipes, debug logging, and known limitations.

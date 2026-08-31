@@ -145,6 +145,14 @@ def entity_matches_rule(hass: HomeAssistant, rule: Rule, entity_id: str) -> bool
     # Exclusion wins over every include filter: it is what lets a rule cover a
     # whole domain while dropping the handful of entities that duplicate one
     # another (a switch also exposed as a light, and such).
+    if entity_id in rule.entity_id_exclude:
+        return False
+
+    if rule.device_id_exclude and (
+        _entity_device_id(hass, entity_id) in rule.device_id_exclude
+    ):
+        return False
+
     if any(
         fnmatchcase(entity_id, pattern)
         for pattern in rule.entity_id_exclude_patterns

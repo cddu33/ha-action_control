@@ -144,9 +144,17 @@ steps show the matching settings — nothing else. A rule that just retries
 a command is four short steps; escalation and its verification only add
 steps when you ask for them.
 
+Every step of the wizard ends with a **Back to the previous step** tick
+box: tick it, submit, and you land on the step before — with everything you
+had typed still in place, on both steps. Going back from the first step
+returns to the menu and abandons the rule.
+
 ```mermaid
 flowchart TD
-    A["Targeting<br/>name, domains, filters"] --> B["Services"]
+    A["Targeting<br/>name, domains, filters"] --> A2{"Exclusions ticked?"}
+    A2 -->|no| B["Services"]
+    A2 -->|yes| A3["What to leave out<br/>entities, devices, patterns"]
+    A3 --> B
     B --> C["What it should do<br/>mode, escalation, logging, notifications"]
     C --> D{"Verification mode"}
     D -->|Delay| E["Verification & retries<br/>+ delay before the first check"]
@@ -177,13 +185,31 @@ flight and resets the status sensors to `idle`.
 | Domains | One or more domains this rule watches (e.g. `light`, `switch`, `cover`). Required. The picker lists the domains currently present in your instance, translated, and also accepts a domain typed by hand. |
 | Services | Services within those domains to watch (e.g. `turn_on`). Suggestions cover every service of the chosen domains. Leave empty to watch every service in those domains. |
 | Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) the `entity_id` must match. Case-sensitive. |
-| Entity ID patterns to exclude | Optional list of glob patterns; an entity matching any of them is dropped, whatever the other filters say. Add as many as you need — entities that duplicate one another rarely share a single prefix. Typical use: a switch also exposed as a light (Home Assistant's *change device type*), which would otherwise be verified and retried twice per command. |
 | Friendly name pattern | Optional glob pattern matched against the entity's name, case-insensitively. |
 | Areas / Labels / Devices | Optional filters — an entity matches if it (or its device) belongs to one of the selected areas/labels/devices. |
+| Leave out some entities or devices | Off skips the exclusion step entirely; unticking it on an existing rule also clears what that rule excluded. |
 
 Filters are combined with AND: an entity must satisfy every filter that is
 set. A rule with no pattern/area/label/device filter at all matches every
 entity in scope for its domain(s)/service(s) — e.g. "watch every light".
+
+### What to leave out
+
+Shown only when *Leave out some entities or devices* is ticked on the
+targeting step. Exclusions win over every include filter above, which is
+what lets a rule cover a whole domain minus a handful of entities.
+
+| Field | Description |
+|---|---|
+| Entities to leave out | Pick them from a list, restricted to the rule's domains. This is the direct, readable way to drop a specific entity. |
+| Devices to leave out | Drops **every** entity that device exposes. For "never watch anything on this device" — a gateway you know is unreliable, say. |
+| Entity ID patterns to exclude | Glob patterns (e.g. `light.salon_multiprise_*`), for the wider cases. Add as many as you need — entities that duplicate one another rarely share a single prefix. |
+
+The case this exists for is a switch also exposed as a light (Home
+Assistant's *change device type*), watched and retried twice for a single
+command. **Exclude the duplicate entity, not its device**: `switch_as_x`
+attaches the derived `light.x` to the same device as `switch.x`, so a
+device exclusion would drop both and leave the rule watching nothing.
 
 ### What it should do
 

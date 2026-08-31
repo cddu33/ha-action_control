@@ -221,3 +221,36 @@ async def test_entity_matches_rule_wrong_domain_never_matches(hass):
     hass.states.async_set("switch.x", "off")
     rule = Rule(name="r", domains=["light"])
     assert not matching.entity_matches_rule(hass, rule, "switch.x")
+
+
+async def test_entity_matches_rule_exclude_by_entity(hass):
+    """Picking the duplicate entity by hand, rather than writing a pattern."""
+    hass.states.async_set("switch.lumiere_salon", "off")
+    hass.states.async_set("light.lumiere_salon", "off")
+
+    rule = Rule(
+        name="r",
+        domains=["light", "switch"],
+        entity_id_exclude=["light.lumiere_salon"],
+    )
+    assert matching.entity_matches_rule(hass, rule, "switch.lumiere_salon")
+    assert not matching.entity_matches_rule(hass, rule, "light.lumiere_salon")
+
+
+async def test_entity_matches_rule_exclude_by_device(hass):
+    """A device exclusion drops every entity that device exposes."""
+    excluded = _make_device(hass)
+    kept = _make_device(hass)
+    ent_reg = er.async_get(hass)
+    entries = {}
+    for name, device in (("excluded", excluded), ("kept", kept)):
+        entry = ent_reg.async_get_or_create(
+            "switch", "test", f"{name}_switch", suggested_object_id=name
+        )
+        ent_reg.async_update_entity(entry.entity_id, device_id=device.id)
+        hass.states.async_set(entry.entity_id, "off")
+        entries[name] = entry
+
+    rule = Rule(name="r", domains=["switch"], device_id_exclude=[excluded.id])
+    assert not matching.entity_matches_rule(hass, rule, entries["excluded"].entity_id)
+    assert matching.entity_matches_rule(hass, rule, entries["kept"].entity_id)
