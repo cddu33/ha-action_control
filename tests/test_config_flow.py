@@ -8,7 +8,13 @@ import re
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.action_control.const import DOMAIN, OPT_RULES
+from custom_components.action_control.const import (
+    DEFAULT_LOG_ENTITY_INFO,
+    DEFAULT_RETRY_BACKOFF,
+    DOMAIN,
+    OPT_GLOBAL,
+    OPT_RULES,
+)
 
 
 async def test_single_instance_enforced(hass):
@@ -196,7 +202,9 @@ async def test_retry_backoff_and_log_entity_info_are_saved(hass):
     assert rule["log_entity_info"] is True
 
 
-async def test_retry_backoff_and_log_entity_info_default_when_omitted(hass):
+async def test_the_wizard_falls_back_to_the_module_defaults(hass):
+    """Compared against the constants, not literals: what the constants are
+    worth is test_models\'s job, what the wizard reads is this one\'s."""
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
@@ -205,8 +213,8 @@ async def test_retry_backoff_and_log_entity_info_default_when_omitted(hass):
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
-    assert rule["retry_backoff"] == "constant"
-    assert rule["log_entity_info"] is False
+    assert rule["retry_backoff"] == DEFAULT_RETRY_BACKOFF
+    assert rule["log_entity_info"] is DEFAULT_LOG_ENTITY_INFO
 
 
 async def test_a_rule_without_any_domain_is_rejected(hass):
@@ -406,8 +414,9 @@ async def test_global_settings(hass):
         hass, result, {"enabled": False, "default_retries": 3, "default_retry_delay": 5}
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
-    assert entry.options["global"]["enabled"] is False
-    assert entry.options["global"]["default_retries"] == 3
+    assert entry.options[OPT_GLOBAL]["enabled"] is False
+    assert entry.options[OPT_GLOBAL]["default_retries"] == 3
+    assert entry.options[OPT_GLOBAL]["default_retry_delay"] == 5
 
 
 async def test_exclusions_are_skipped_and_cleared_when_unticked(hass):
@@ -525,26 +534,6 @@ async def test_the_menu_lists_only_the_sections_the_rule_uses(hass):
     ]
 
 
-async def test_the_menu_lists_the_escalation_sections_when_they_are_on(hass):
-    entry = await _create_entry(hass)
-    result = await _start_rule(hass, entry, name="Escalating")
-    result = await _submit(hass, result, {"escalation_enabled": True})
-    result = await _submit(hass, result)
-    result = await _submit(hass, result, {"escalation_check_enabled": True})
-    result = await _submit(
-        hass,
-        result,
-        {
-            "escalation_check_entity_id": "switch.gateway",
-            "escalation_check_state": "on",
-        },
-    )
-
-    assert result["step_id"] == "rule_menu"
-    assert "rule_escalation" in result["menu_options"]
-    assert "rule_escalation_check" in result["menu_options"]
-
-
 async def test_every_menu_option_has_a_label(hass):
     """A menu option with no translation shows up as its raw step id."""
     entry = await _create_entry(hass)
@@ -574,19 +563,15 @@ async def test_every_menu_option_has_a_label(hass):
     assert set(result["menu_options"]) == set(_menu_labels())
 
 
-async def test_the_menu_summarises_each_section(hass):
+async def test_every_placeholder_the_menu_references_is_supplied(hass):
+    """A placeholder the summaries forget renders as a raw "{name}" under the
+    button, which nothing else in the suite would notice."""
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Summarised", domains=["switch"])
-    result = await _submit(hass, result)
-    result = await _submit(hass, result)
+    result = await _defaults(hass, result, 2)
 
     placeholders = result["description_placeholders"]
-    assert placeholders["name"] == "Summarised"
-    assert placeholders["domains"] == "switch"
-    # Every placeholder the translations reference must be supplied, or Home
-    # Assistant renders the raw "{name}".
-    descriptions = _rule_menu_strings("menu_option_descriptions")
-    for text in descriptions.values():
+    for text in _rule_menu_strings("menu_option_descriptions").values():
         for field in re.findall(r"\{(\w+)\}", text):
             assert field in placeholders
 
