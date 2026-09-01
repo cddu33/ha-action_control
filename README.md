@@ -42,7 +42,7 @@ flowchart TD
 
 - **Generic command verification** — watches any domain/service call, not
   just light/switch/cover.
-- **Customizable targeting per rule** — domain(s), service(s), `entity_id`
+- **Customizable inclusion per rule** — domain(s), service(s), `entity_id`
   glob pattern, friendly-name pattern, areas, labels, and/or devices.
 - **Exclusions** — leave entities out of a rule by picking them from a
   list, by device, or by glob pattern. What it is mostly for: a switch also
@@ -113,18 +113,18 @@ done from the integration's *Configure* button — no YAML needed.
 The wizard asks for the capabilities you want first, then only shows the
 settings those choices actually need:
 
-- **Targeting**: domain(s), service(s), `entity_id` pattern, name pattern,
+- **Inclusion**: domain(s), service(s), `entity_id` pattern, name pattern,
   areas, labels, devices.
-- **What to leave out** (only if ticked): entities picked from a list,
-  devices, or glob patterns.
-- **What it should do**: how to verify (delay or movement), whether to run
-  a recovery action, logging and notifications.
+- **Exclusion** (only if ticked): entities picked from a list, devices, or
+  glob patterns.
+- **Behavior**: how to verify (delay or movement), whether to run a
+  recovery action, logging and notifications.
 - **Verification**: attributes to check with tolerance (e.g. `brightness`,
   `rgb_color`), retry count and delay growth — plus the delay before the
   first check, or the attribute to watch, depending on the mode. The
   `light`, `switch`, and `cover` domains come with sensible defaults
   pre-filled.
-- **Recovery action** (only if ticked): what to run when verification keeps
+- **Recovery** (only if ticked): what to run when verification keeps
   failing, with a minimum delay between two escalations — and optionally an
   entity to check to confirm it worked.
 

@@ -41,7 +41,7 @@ flowchart TD
 
 - **Vérification générique des commandes** — surveille n'importe quel appel
   de domaine/service, pas seulement light/switch/cover.
-- **Ciblage personnalisable par règle** — domaine(s), service(s), motif glob
+- **Inclusion personnalisable par règle** — domaine(s), service(s), motif glob
   d'`entity_id`, motif de nom, pièces, étiquettes et/ou appareils.
 - **Exclusions** — laissez des entités de côté en les choisissant dans une
   liste, par appareil, ou par motif glob. Utilité principale : un switch
@@ -116,19 +116,19 @@ de l'intégration — aucun YAML n'est nécessaire.
 L'assistant demande d'abord les fonctionnalités voulues, puis n'affiche que
 les réglages que ces choix nécessitent réellement :
 
-- **Ciblage** : domaine(s), service(s), motif d'`entity_id`, motif de nom,
+- **Inclusion** : domaine(s), service(s), motif d'`entity_id`, motif de nom,
   pièces, étiquettes, appareils.
-- **Ce qu'il faut laisser de côté** (seulement si coché) : des entités
-  choisies dans une liste, des appareils, ou des motifs glob.
-- **Ce qu'elle doit faire** : comment vérifier (Délai ou Mouvement),
-  faut-il une action de secours, journalisation et notifications.
+- **Exclusion** (seulement si cochée) : des entités choisies dans une liste,
+  des appareils, ou des motifs glob.
+- **Comportement** : comment vérifier (Délai ou Mouvement), faut-il une
+  action de secours, journalisation et notifications.
 - **Vérification** : attributs à vérifier avec tolérance (ex. `brightness`,
   `rgb_color`), nombre de relances et évolution du délai — plus le délai
   avant contrôle, ou l'attribut à surveiller, selon le mode. Les domaines
   `light`, `switch` et `cover` sont préremplis avec des valeurs par défaut
   adaptées.
-- **Action de secours** (seulement si cochée) : quoi exécuter si la
-  vérification échoue de manière persistante, avec un délai minimum entre
+- **Secours** (seulement si cochée) : quoi exécuter si la vérification
+  échoue de manière persistante, avec un délai minimum entre
   deux escalades — et éventuellement une entité à contrôler pour confirmer
   qu'elle a fonctionné.
 

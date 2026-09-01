@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.2]
+
+### Changed
+- The rule menu's buttons are named in one or two words instead of a sentence,
+  and the two sections that do the opposite of one another finally answer each
+  other: **Inclusion** and **Exclusion**. The rest follow — *Behavior*,
+  *Verification*, *Recovery*, *Recovery check*, *Save*. What a short label no
+  longer spells out, the summary line under it does; the two sections that had
+  no summary now have one. Step titles and the documentation's section headings
+  follow the same names, so a button and the screen it opens are called the
+  same thing.
+- The tick box that opens the exclusion section reads *Exclude some entities or
+  devices*, and its fields *Entities to exclude* / *Devices to exclude*.
+
 ## [0.6.1]
 
 ### Changed

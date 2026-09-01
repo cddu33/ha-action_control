@@ -45,10 +45,14 @@ and notifying when it doesn't.
   the dataclass default. That is a useful safety net for old stored rules,
   but it also means a field the wizard stops collecting degrades silently —
   no exception, no failing test.
-- `tests/test_config_flow.py` depends on the **number and order of wizard
-  steps** (several `for _ in range(3)` loops). Inserting or moving a step
-  breaks it, and the worst case fails late on an unrelated assertion rather
-  than at the step itself.
+- `tests/test_config_flow.py` drives the flow through a handful of helpers at
+  the top of the file — `_submit`, `_defaults`, `_select_menu`, `_start_rule`,
+  `_edit_rule`, `_pick_section`, `_save_rule`. Write new tests with those, not
+  with raw `async_configure` calls.
+- Those tests depend on the **number and order of wizard steps** (several
+  `_defaults(hass, result, 3)` walks). Inserting or moving a step breaks them,
+  and the worst case fails late on an unrelated assertion rather than at the
+  step itself.
 - `test_services_step_offers_the_chosen_domains_registered_services` requires
   `add_rule_services` to stay the step immediately after `add_rule` **when
   exclusions are unticked** — which is the default, and what that test

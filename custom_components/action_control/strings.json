@@ -25,26 +25,28 @@
         "title": "Rule – sections",
         "description": "Pick a section to fill in or correct; you come back here each time. Nothing is written until you save.",
         "menu_options": {
-          "add_rule": "Targeting",
-          "rule_exclude": "What to leave out",
+          "add_rule": "Inclusion",
+          "rule_exclude": "Exclusion",
           "add_rule_services": "Services",
-          "rule_features": "What it should do",
-          "rule_verify": "Verification & retries",
-          "rule_escalation": "Recovery action",
-          "rule_escalation_check": "Verifying the recovery action",
-          "rule_save": "Save the rule"
+          "rule_features": "Behavior",
+          "rule_verify": "Verification",
+          "rule_escalation": "Recovery",
+          "rule_escalation_check": "Recovery check",
+          "rule_save": "Save"
         },
         "menu_option_descriptions": {
           "add_rule": "{name} — {domains}",
-          "rule_exclude": "{excluded} left out",
+          "rule_exclude": "{excluded} excluded",
           "add_rule_services": "{services}",
+          "rule_features": "Verification mode, recovery, logging, notifications",
           "rule_verify": "{retries} retries",
+          "rule_escalation": "Action, cooldown, replay delay",
           "rule_escalation_check": "{escalation_check_entity_id}"
         }
       },
       "add_rule": {
-        "title": "Rule – what to watch",
-        "description": "Choose which domain(s) this rule watches, and which entities it applies to. The following steps let you pick the services to watch within these domains, and optionally what to leave out.",
+        "title": "Rule – inclusion",
+        "description": "Choose which domain(s) this rule watches, and which entities it applies to. The following steps let you pick the services to watch within these domains, and optionally what to exclude.",
         "data": {
           "name": "Name",
           "enabled": "Rule enabled",
@@ -54,27 +56,27 @@
           "area_ids": "Areas",
           "label_ids": "Labels",
           "device_ids": "Devices",
-          "exclusions_enabled": "Leave out some entities or devices"
+          "exclusions_enabled": "Exclude some entities or devices"
         }
       },
       "rule_exclude": {
-        "title": "Rule – what to leave out",
-        "description": "Anything named here is dropped whatever the other filters say. Pick entities to remove them one by one — the usual case being a switch also exposed as a light, watched twice per command. Picking a device removes every entity it exposes, so it is not the way to split such a pair: both belong to the same device. Patterns cover the wider cases. Only the {domains} domain(s) are offered.",
+        "title": "Rule – exclusion",
+        "description": "Anything named here is excluded whatever the other filters say. Pick entities to remove them one by one — the usual case being a switch also exposed as a light, watched twice per command. Picking a device removes every entity it exposes, so it is not the way to split such a pair: both belong to the same device. Patterns cover the wider cases. Only the {domains} domain(s) are offered.",
         "data": {
-          "entity_id_exclude": "Entities to leave out",
-          "device_id_exclude": "Devices to leave out (removes every entity they expose)",
+          "entity_id_exclude": "Entities to exclude",
+          "device_id_exclude": "Devices to exclude (removes every entity they expose)",
           "entity_id_exclude_patterns": "Entity ID patterns to exclude (glob, e.g. light.salon_multiprise_*)"
         }
       },
       "add_rule_services": {
-        "title": "Rule – which services",
+        "title": "Rule – services",
         "description": "Services actually available for {domains} are suggested below; leave empty to watch every service in these domains, or type a service name that isn't listed.",
         "data": {
           "services": "Services (empty = any service in the domain)"
         }
       },
       "rule_features": {
-        "title": "Rule – what it should do",
+        "title": "Rule – behavior",
         "description": "Pick what this rule uses. The next steps only ask for the settings these choices actually need.",
         "data": {
           "verification_mode": "How to verify the command",
@@ -85,7 +87,7 @@
         }
       },
       "rule_verify": {
-        "title": "Rule – verification & retries",
+        "title": "Rule – verification",
         "description": "Define how the outcome is checked and how retries are handled.",
         "data": {
           "check_delay": "Delay before the first check (seconds)",
@@ -99,7 +101,7 @@
         }
       },
       "rule_escalation": {
-        "title": "Rule – recovery action",
+        "title": "Rule – recovery",
         "description": "The recovery action (e.g. turning on a switch, or running a script) to run when verification keeps failing.",
         "data": {
           "escalation_action": "Escalation action",
@@ -109,7 +111,7 @@
         }
       },
       "rule_escalation_check": {
-        "title": "Rule – verifying the recovery action",
+        "title": "Rule – recovery check",
         "description": "The recovery action is re-run, using this rule's retry count and delay growth, until this entity reaches the expected state. The original command is replayed either way.",
         "data": {
           "escalation_check_entity_id": "Entity to verify after the recovery action",
