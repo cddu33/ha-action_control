@@ -25,26 +25,28 @@
         "title": "Règle – sections",
         "description": "Choisissez une section à remplir ou à corriger ; vous revenez ici à chaque fois. Rien n'est écrit tant que vous n'enregistrez pas.",
         "menu_options": {
-          "add_rule": "Ciblage",
-          "rule_exclude": "Ce qu'il faut laisser de côté",
+          "add_rule": "Inclusion",
+          "rule_exclude": "Exclusion",
           "add_rule_services": "Services",
-          "rule_features": "Ce qu'elle doit faire",
-          "rule_verify": "Vérification et relances",
-          "rule_escalation": "Action de secours",
-          "rule_escalation_check": "Vérification de l'action de secours",
-          "rule_save": "Enregistrer la règle"
+          "rule_features": "Comportement",
+          "rule_verify": "Vérification",
+          "rule_escalation": "Secours",
+          "rule_escalation_check": "Contrôle du secours",
+          "rule_save": "Enregistrer"
         },
         "menu_option_descriptions": {
           "add_rule": "{name} — {domains}",
-          "rule_exclude": "{excluded} laissée(s) de côté",
+          "rule_exclude": "{excluded} exclue(s)",
           "add_rule_services": "{services}",
+          "rule_features": "Mode de vérification, secours, journal, notifications",
           "rule_verify": "{retries} relances",
+          "rule_escalation": "Action, temporisation, délai de rejeu",
           "rule_escalation_check": "{escalation_check_entity_id}"
         }
       },
       "add_rule": {
-        "title": "Règle – ce qu'il faut surveiller",
-        "description": "Choisissez le(s) domaine(s) surveillé(s) par cette règle, et les entités concernées. Les étapes suivantes permettent de choisir les services à surveiller dans ces domaines, et éventuellement ce qu'il faut laisser de côté.",
+        "title": "Règle – inclusion",
+        "description": "Choisissez le(s) domaine(s) surveillé(s) par cette règle, et les entités concernées. Les étapes suivantes permettent de choisir les services à surveiller dans ces domaines, et éventuellement ce qu'il faut exclure.",
         "data": {
           "name": "Nom",
           "enabled": "Règle activée",
@@ -54,27 +56,27 @@
           "area_ids": "Pièces",
           "label_ids": "Étiquettes",
           "device_ids": "Appareils",
-          "exclusions_enabled": "Laisser de côté certaines entités ou certains appareils"
+          "exclusions_enabled": "Exclure des entités ou des appareils"
         }
       },
       "rule_exclude": {
-        "title": "Règle – ce qu'il faut laisser de côté",
-        "description": "Ce qui est désigné ici est écarté quels que soient les autres filtres. Choisissez des entités pour les retirer une par une — le cas courant étant un switch aussi exposé en lumière, vérifié deux fois par commande. Choisir un appareil retire toutes ses entités : ce n'est donc pas le moyen de séparer un tel doublon, les deux appartenant au même appareil. Les motifs couvrent les cas plus larges. Seuls le ou les domaines {domains} sont proposés.",
+        "title": "Règle – exclusion",
+        "description": "Ce qui est désigné ici est exclu quels que soient les autres filtres. Choisissez des entités pour les retirer une par une — le cas courant étant un switch aussi exposé en lumière, vérifié deux fois par commande. Choisir un appareil retire toutes ses entités : ce n'est donc pas le moyen de séparer un tel doublon, les deux appartenant au même appareil. Les motifs couvrent les cas plus larges. Seuls le ou les domaines {domains} sont proposés.",
         "data": {
-          "entity_id_exclude": "Entités à laisser de côté",
-          "device_id_exclude": "Appareils à laisser de côté (retire toutes leurs entités)",
+          "entity_id_exclude": "Entités à exclure",
+          "device_id_exclude": "Appareils à exclure (retire toutes leurs entités)",
           "entity_id_exclude_patterns": "Entity_id à exclure (glob, ex. light.salon_multiprise_*)"
         }
       },
       "add_rule_services": {
-        "title": "Règle – quels services",
+        "title": "Règle – services",
         "description": "Les services réellement disponibles pour {domains} sont proposés ci-dessous ; laissez vide pour surveiller tous les services de ces domaines, ou saisissez un nom de service absent de la liste.",
         "data": {
           "services": "Services (vide = tous les services du domaine)"
         }
       },
       "rule_features": {
-        "title": "Règle – ce qu'elle doit faire",
+        "title": "Règle – comportement",
         "description": "Choisissez ce que cette règle utilise. Les étapes suivantes ne demanderont que les réglages réellement nécessaires à ces choix.",
         "data": {
           "verification_mode": "Comment vérifier la commande",
@@ -85,7 +87,7 @@
         }
       },
       "rule_verify": {
-        "title": "Règle – vérification et relances",
+        "title": "Règle – vérification",
         "description": "Définissez comment le résultat est vérifié et comment les relances sont gérées.",
         "data": {
           "check_delay": "Délai avant la première vérification (secondes)",
@@ -99,7 +101,7 @@
         }
       },
       "rule_escalation": {
-        "title": "Règle – action de secours",
+        "title": "Règle – secours",
         "description": "L'action de secours (ex. activer un switch, ou lancer un script) déclenchée si la vérification échoue de manière persistante.",
         "data": {
           "escalation_action": "Action d'escalade",
@@ -109,7 +111,7 @@
         }
       },
       "rule_escalation_check": {
-        "title": "Règle – vérification de l'action de secours",
+        "title": "Règle – contrôle du secours",
         "description": "L'action de secours est relancée, selon le nombre de relances et l'évolution du délai de cette règle, jusqu'à ce que cette entité atteigne l'état attendu. La commande d'origine est rejouée dans tous les cas.",
         "data": {
           "escalation_check_entity_id": "Entité à vérifier après l'action de secours",

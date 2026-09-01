@@ -133,13 +133,13 @@ Everything is configured from the integration's **Configure** button
 
 | Menu entry | What it does |
 |---|---|
-| Add a rule | Wizard: what to watch → which services → what it should do → the settings those choices need, ending on the rule menu. |
+| Add a rule | Wizard: inclusion → services → behavior → the settings those choices need, ending on the rule menu. |
 | Edit a rule | Straight to the rule menu, pre-filled with the selected rule. |
 | Delete a rule | Asks for confirmation, then removes the rule and its sensor. |
 | Global settings | Master switch and default values, see [Global settings](#global-settings). |
 
 The wizard only asks for what a rule actually uses: you tick the
-capabilities you want on the *what it should do* step, and the following
+capabilities you want on the **Behavior** step, and the following
 steps show the matching settings — nothing else. A rule that just retries
 a command is four short steps; escalation and its verification only add
 steps when you ask for them.
@@ -160,21 +160,21 @@ interface renders as clickable buttons. Hence this shape.
 ```mermaid
 flowchart TD
     N["Add a rule"] --> A
-    A["Targeting<br/>name, domains, filters"] --> A2{"Exclusions ticked?"}
+    A["Inclusion<br/>name, domains, filters"] --> A2{"Exclusions ticked?"}
     A2 -->|no| B["Services"]
-    A2 -->|yes| A3["What to leave out<br/>entities, devices, patterns"]
+    A2 -->|yes| A3["Exclusion<br/>entities, devices, patterns"]
     A3 --> B
-    B --> C["What it should do<br/>mode, escalation, logging, notifications"]
+    B --> C["Behavior<br/>mode, escalation, logging, notifications"]
     C --> D{"Verification mode"}
-    D -->|Delay| E["Verification & retries<br/>+ delay before the first check"]
-    D -->|Movement| F["Verification & retries<br/>+ attribute to watch, timeout"]
+    D -->|Delay| E["Verification<br/>+ delay before the first check"]
+    D -->|Movement| F["Verification<br/>+ attribute to watch, timeout"]
     E --> G{"Escalation ticked?"}
     F --> G
     G -->|no| Z
-    G -->|yes| H["Recovery action<br/>action, cooldown, replay delay"]
+    G -->|yes| H["Recovery<br/>action, cooldown, replay delay"]
     H --> I{"Verify the recovery action?"}
     I -->|no| Z
-    I -->|yes| J["Verifying the recovery action<br/>entity, expected state, delay"]
+    I -->|yes| J["Recovery check<br/>entity, expected state, delay"]
     J --> Z
     Z["Rule menu<br/>one button per section + Save"] -.->|reopen a section| A
     Z --> S["Saved"]
@@ -188,7 +188,7 @@ flight and resets the status sensors to `idle`.
 
 ## Rule reference
 
-### Targeting
+### Inclusion
 
 | Field | Description |
 |---|---|
@@ -199,22 +199,22 @@ flight and resets the status sensors to `idle`.
 | Entity ID pattern | Optional glob pattern (e.g. `cover.volet_*`) the `entity_id` must match. Case-sensitive. |
 | Friendly name pattern | Optional glob pattern matched against the entity's name, case-insensitively. |
 | Areas / Labels / Devices | Optional filters — an entity matches if it (or its device) belongs to one of the selected areas/labels/devices. |
-| Leave out some entities or devices | Off skips the exclusion step entirely; unticking it on an existing rule also clears what that rule excluded. |
+| Exclude some entities or devices | Off skips the **Exclusion** section entirely; unticking it on an existing rule also clears what that rule excluded. |
 
 Filters are combined with AND: an entity must satisfy every filter that is
 set. A rule with no pattern/area/label/device filter at all matches every
 entity in scope for its domain(s)/service(s) — e.g. "watch every light".
 
-### What to leave out
+### Exclusion
 
-Shown only when *Leave out some entities or devices* is ticked on the
-targeting step. Exclusions win over every include filter above, which is
-what lets a rule cover a whole domain minus a handful of entities.
+Shown only when *Exclude some entities or devices* is ticked on the
+**Inclusion** step. Exclusions win over every filter above, which is what
+lets a rule cover a whole domain minus a handful of entities.
 
 | Field | Description |
 |---|---|
-| Entities to leave out | Pick them from a list, restricted to the rule's domains. This is the direct, readable way to drop a specific entity. |
-| Devices to leave out | Drops **every** entity that device exposes. For "never watch anything on this device" — a gateway you know is unreliable, say. |
+| Entities to exclude | Pick them from a list, restricted to the rule's domains. This is the direct, readable way to drop a specific entity. |
+| Devices to exclude | Drops **every** entity that device exposes. For "never watch anything on this device" — a gateway you know is unreliable, say. |
 | Entity ID patterns to exclude | Glob patterns (e.g. `light.salon_multiprise_*`), for the wider cases. Add as many as you need — entities that duplicate one another rarely share a single prefix. |
 
 The case this exists for is a switch also exposed as a light (Home
@@ -223,9 +223,9 @@ command. **Exclude the duplicate entity, not its device**: `switch_as_x`
 attaches the derived `light.x` to the same device as `switch.x`, so a
 device exclusion would drop both and leave the rule watching nothing.
 
-### What it should do
+### Behavior
 
-The step that decides which of the following steps you'll be asked to fill in.
+The step that decides which of the other sections you'll be asked to fill in.
 
 | Field | Description | Default |
 |---|---|---|
@@ -260,7 +260,7 @@ domains, sensible defaults are pre-filled automatically:
 Any other domain — or a rule targeting several domains at once — starts
 from a plain state-only check that you can refine with the fields above.
 
-### Recovery action
+### Recovery
 
 Only asked for when *Run a recovery action* is ticked.
 
@@ -276,7 +276,7 @@ restart, so entities failing at the same moment cannot fire the action
 several times over. Escalation enabled without a configured action does
 nothing and is logged as a warning.
 
-### Verifying the recovery action
+### Recovery check
 
 Only asked for when *Verify the recovery action worked* is ticked.
 
@@ -508,7 +508,7 @@ These are always logged, no configuration needed:
 
 ### The per-rule summary (`info`)
 
-Ticking *Log a summary … at info level* on a rule's **what it should do**
+Ticking *Log a summary … at info level* on a rule's **Behavior**
 step adds one `info` line per entity, each time that rule resolves:
 
 ```

@@ -350,7 +350,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(step_id="edit_rule_select", data_schema=schema)
 
-    # ---- add / edit: page 1 - targeting ----
+    # ---- add / edit: inclusion ----
 
     async def async_step_add_rule(
         self, user_input: dict[str, Any] | None = None
@@ -439,7 +439,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(step_id="add_rule", data_schema=schema, errors=errors)
 
-    # ---- add / edit: page 1b - what to leave out ----
+    # ---- add / edit: exclusion ----
 
     async def async_step_rule_exclude(
         self, user_input: dict[str, Any] | None = None
@@ -496,7 +496,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             description_placeholders={"domains": ", ".join(domains)},
         )
 
-    # ---- add / edit: page 1c - which services, now that domains are known ----
+    # ---- add / edit: services, now that the domains are known ----
 
     async def async_step_add_rule_services(
         self, user_input: dict[str, Any] | None = None
@@ -534,7 +534,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             description_placeholders={"domains": ", ".join(domains)},
         )
 
-    # ---- add / edit: page 2 - which capabilities this rule uses ----
+    # ---- add / edit: behavior -- which capabilities this rule uses ----
 
     def _preset_for_draft(self) -> dict[str, Any]:
         """Domain defaults, when the rule watches exactly one known domain."""
@@ -610,7 +610,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(step_id="rule_features", data_schema=schema)
 
-    # ---- add / edit: page 3 - verification ----
+    # ---- add / edit: verification ----
 
     async def async_step_rule_verify(
         self, user_input: dict[str, Any] | None = None
@@ -738,7 +738,7 @@ class ActionControlOptionsFlow(OptionsFlow):
             step_id="rule_verify", data_schema=vol.Schema(fields), errors=errors
         )
 
-    # ---- add / edit: page 4 - escalation (only when it is enabled) ----
+    # ---- add / edit: recovery (only when it is enabled) ----
 
     async def async_step_rule_escalation(
         self, user_input: dict[str, Any] | None = None
@@ -791,7 +791,7 @@ class ActionControlOptionsFlow(OptionsFlow):
         )
         return self.async_show_form(step_id="rule_escalation", data_schema=schema)
 
-    # ---- add / edit: page 5 - verifying the escalation action ----
+    # ---- add / edit: recovery check ----
 
     async def async_step_rule_escalation_check(
         self, user_input: dict[str, Any] | None = None

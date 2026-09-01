@@ -139,13 +139,13 @@ menu propose :
 
 | Entrée de menu | Rôle |
 |---|---|
-| Ajouter une règle | Assistant : ce qu'il faut surveiller → quels services → ce que la règle doit faire → les réglages correspondants, avec le menu de la règle pour finir. |
+| Ajouter une règle | Assistant : inclusion → services → comportement → les réglages correspondants, avec le menu de la règle pour finir. |
 | Modifier une règle | Directement le menu de la règle, prérempli avec la règle choisie. |
 | Supprimer une règle | Demande confirmation, puis supprime la règle et son capteur. |
 | Paramètres globaux | Interrupteur général et valeurs par défaut, voir [Paramètres globaux](#paramètres-globaux). |
 
 L'assistant ne demande que ce que la règle utilise réellement : vous cochez
-les fonctionnalités voulues à l'étape *ce qu'elle doit faire*, et les
+les fonctionnalités voulues à l'étape **Comportement**, et les
 étapes suivantes n'affichent que les réglages correspondants. Une règle qui
 se contente de relancer une commande tient en quatre étapes courtes ;
 l'escalade et sa vérification n'ajoutent des étapes que si vous les
@@ -168,21 +168,21 @@ cette forme.
 ```mermaid
 flowchart TD
     N["Ajouter une règle"] --> A
-    A["Ciblage<br/>nom, domaines, filtres"] --> A2{"Exclusions cochées ?"}
+    A["Inclusion<br/>nom, domaines, filtres"] --> A2{"Exclusions cochées ?"}
     A2 -->|non| B["Services"]
-    A2 -->|oui| A3["Ce qu'il faut laisser de côté<br/>entités, appareils, motifs"]
+    A2 -->|oui| A3["Exclusion<br/>entités, appareils, motifs"]
     A3 --> B
-    B --> C["Ce qu'elle doit faire<br/>mode, escalade, journal, notifications"]
+    B --> C["Comportement<br/>mode, escalade, journal, notifications"]
     C --> D{"Mode de vérification"}
-    D -->|Délai| E["Vérification et relances<br/>+ délai avant la 1re vérification"]
-    D -->|Mouvement| F["Vérification et relances<br/>+ attribut à surveiller, délai d'attente"]
+    D -->|Délai| E["Vérification<br/>+ délai avant la 1re vérification"]
+    D -->|Mouvement| F["Vérification<br/>+ attribut à surveiller, délai d'attente"]
     E --> G{"Escalade cochée ?"}
     F --> G
     G -->|non| Z
-    G -->|oui| H["Action de secours<br/>action, recharge, délai de rejeu"]
+    G -->|oui| H["Secours<br/>action, recharge, délai de rejeu"]
     H --> I{"Vérifier l'action de secours ?"}
     I -->|non| Z
-    I -->|oui| J["Vérification de l'action de secours<br/>entité, état attendu, délai"]
+    I -->|oui| J["Contrôle du secours<br/>entité, état attendu, délai"]
     J --> Z
     Z["Menu de la règle<br/>un bouton par section + Enregistrer"] -.->|rouvrir une section| A
     Z --> S["Enregistrée"]
@@ -197,7 +197,7 @@ de statut sur `idle`.
 
 ## Référence des champs de règle
 
-### Ciblage
+### Inclusion
 
 | Champ | Description |
 |---|---|
@@ -208,7 +208,7 @@ de statut sur `idle`.
 | Motif d'entity_id | Motif glob optionnel (ex. `cover.volet_*`) que l'`entity_id` doit respecter. Sensible à la casse. |
 | Motif de nom convivial | Motif glob optionnel comparé au nom de l'entité, sans tenir compte de la casse. |
 | Pièces / Étiquettes / Appareils | Filtres optionnels — une entité correspond si elle (ou son appareil) appartient à une des pièces/étiquettes/appareils sélectionnés. |
-| Laisser de côté certaines entités ou certains appareils | Décoché, l'étape d'exclusion est sautée ; le décocher sur une règle existante efface aussi ce qu'elle excluait. |
+| Exclure des entités ou des appareils | Décoché, la section **Exclusion** est entièrement sautée ; le décocher sur une règle existante efface aussi ce qu'elle excluait. |
 
 Les filtres se cumulent (ET logique) : une entité doit satisfaire tous
 ceux qui sont renseignés. Une règle sans aucun filtre
@@ -216,17 +216,17 @@ motif/pièce/étiquette/appareil correspond à toutes les entités du/des
 domaine(s)/service(s) choisis — par exemple « surveiller toutes les
 lumières ».
 
-### Ce qu'il faut laisser de côté
+### Exclusion
 
-Affichée seulement si *Laisser de côté certaines entités ou certains
-appareils* est coché à l'étape de ciblage. Les exclusions l'emportent sur
-tous les filtres d'inclusion ci-dessus : c'est ce qui permet à une règle de
-couvrir un domaine entier moins quelques entités.
+Affichée seulement si *Exclure des entités ou des appareils* est coché à
+l'étape **Inclusion**. Les exclusions l'emportent sur tous les filtres
+ci-dessus : c'est ce qui permet à une règle de couvrir un domaine entier
+moins quelques entités.
 
 | Champ | Description |
 |---|---|
-| Entités à laisser de côté | À choisir dans une liste, limitée aux domaines de la règle. C'est le moyen direct et lisible d'écarter une entité précise. |
-| Appareils à laisser de côté | Retire **toutes** les entités de cet appareil. Pour un « ne jamais rien surveiller sur cet appareil » — une passerelle que vous savez capricieuse, par exemple. |
+| Entités à exclure | À choisir dans une liste, limitée aux domaines de la règle. C'est le moyen direct et lisible d'écarter une entité précise. |
+| Appareils à exclure | Retire **toutes** les entités de cet appareil. Pour un « ne jamais rien surveiller sur cet appareil » — une passerelle que vous savez capricieuse, par exemple. |
 | Entity_id à exclure | Motifs glob (ex. `light.salon_multiprise_*`), pour les cas plus larges. Ajoutez-en autant que nécessaire — les entités qui se doublonnent partagent rarement un préfixe unique. |
 
 Le cas qui a fait naître cette étape : un switch également exposé en light
@@ -236,9 +236,9 @@ appareil** : `switch_as_x` rattache le `light.x` dérivé au même appareil
 que `switch.x`, donc exclure l'appareil retirerait les deux et la règle ne
 surveillerait plus rien.
 
-### Ce qu'elle doit faire
+### Comportement
 
-L'étape qui décide des étapes suivantes à remplir.
+L'étape qui décide des autres sections à remplir.
 
 | Champ | Description | Par défaut |
 |---|---|---|
@@ -275,7 +275,7 @@ Tout autre domaine — ou une règle visant plusieurs domaines à la fois —
 part d'une simple vérification d'état, à affiner avec les champs
 ci-dessus.
 
-### Action de secours
+### Secours
 
 Demandée uniquement si *Déclencher une action de secours* est coché.
 
@@ -291,7 +291,7 @@ et il survit à un redémarrage : des entités qui échouent au même moment ne
 peuvent donc pas déclencher l'action plusieurs fois. Une escalade activée
 sans action configurée ne fait rien et est journalisée en avertissement.
 
-### Vérification de l'action de secours
+### Contrôle du secours
 
 Demandée uniquement si *Vérifier que l'action de secours a fonctionné* est
 coché.

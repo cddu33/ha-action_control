@@ -36,21 +36,45 @@ async def _create_entry(hass):
     return hass.config_entries.async_get_entry(entry_id)
 
 
+async def _submit(hass, result, data=None):
+    """Submit the form the flow is showing, letting defaults fill the rest."""
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], data or {}
+    )
+
+
+async def _defaults(hass, result, times=1):
+    """Accept the next `times` forms as they come."""
+    for _ in range(times):
+        result = await _submit(hass, result)
+    return result
+
+
 async def _select_menu(hass, entry, option: str):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] == FlowResultType.MENU
-    return await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": option}
-    )
+    return await _submit(hass, result, {"next_step_id": option})
+
+
+async def _start_rule(hass, entry, **targeting):
+    """Walk the wizard up to the features step."""
+    targeting = {"name": "Rule", "domains": ["switch"], **targeting}
+    result = await _select_menu(hass, entry, "new_rule")
+    result = await _submit(hass, result, targeting)
+    return await _submit(hass, result)
+
+
+async def _edit_rule(hass, entry, rule_id):
+    """Open an existing rule, which lands straight on its menu."""
+    result = await _select_menu(hass, entry, "edit_rule_select")
+    return await _submit(hass, result, {"rule_id": rule_id})
 
 
 async def _pick_section(hass, result, section: str):
     """Open one section from the rule menu."""
     assert result["type"] == FlowResultType.MENU
     assert result["step_id"] == "rule_menu"
-    return await hass.config_entries.options.async_configure(
-        result["flow_id"], {"next_step_id": section}
-    )
+    return await _submit(hass, result, {"next_step_id": section})
 
 
 def _rule_menu_strings(key: str) -> dict[str, str]:
@@ -81,19 +105,17 @@ async def test_add_edit_delete_rule_cycle(hass):
     result = await _select_menu(hass, entry, "new_rule")
     assert result["step_id"] == "add_rule"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Test rule", "domains": ["switch"]}
-    )
+    result = await _submit(hass, result, {"name": "Test rule", "domains": ["switch"]})
     assert result["step_id"] == "add_rule_services"
 
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
     assert result["step_id"] == "rule_features"
 
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
     assert result["step_id"] == "rule_verify"
 
     # Escalation is off by default, so the guided pass ends on the rule menu.
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
     await _save_rule(hass, result)
 
     rules = entry.options[OPT_RULES]
@@ -104,16 +126,11 @@ async def test_add_edit_delete_rule_cycle(hass):
 
     # --- edit that rule ---
     # Editing lands on the menu: one section to change, then save.
-    result = await _select_menu(hass, entry, "edit_rule_select")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"rule_id": rule_id}
-    )
+    result = await _edit_rule(hass, entry, rule_id)
     result = await _pick_section(hass, result, "add_rule")
     assert result["step_id"] == "add_rule"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Renamed rule", "domains": ["switch"]}
-    )
+    result = await _submit(hass, result, {"name": "Renamed rule", "domains": ["switch"]})
     await _save_rule(hass, result)
 
     rules = entry.options[OPT_RULES]
@@ -122,14 +139,10 @@ async def test_add_edit_delete_rule_cycle(hass):
 
     # --- delete that rule ---
     result = await _select_menu(hass, entry, "delete_rule_select")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"rule_id": rule_id}
-    )
+    result = await _submit(hass, result, {"rule_id": rule_id})
     assert result["step_id"] == "delete_rule_confirm"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"confirm": True}
-    )
+    result = await _submit(hass, result, {"confirm": True})
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options[OPT_RULES] == {}
 
@@ -140,9 +153,7 @@ async def test_services_step_offers_the_chosen_domains_registered_services(hass)
 
     entry = await _create_entry(hass)
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Lights", "domains": ["light"]}
-    )
+    result = await _submit(hass, result, {"name": "Lights", "domains": ["light"]})
     assert result["step_id"] == "add_rule_services"
 
     options = result["data_schema"].schema["services"].config["options"]
@@ -153,18 +164,12 @@ async def test_new_rule_starts_from_the_global_retry_defaults(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "global_settings")
-    await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"enabled": True, "default_retries": 5, "default_retry_delay": 7},
-    )
+    await _submit(hass, result, {"enabled": True, "default_retries": 5, "default_retry_delay": 7})
     await hass.async_block_till_done()
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Defaults", "domains": ["switch"]}
-    )
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"name": "Defaults", "domains": ["switch"]})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -176,20 +181,14 @@ async def test_retry_backoff_and_log_entity_info_are_saved(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Backoff", "domains": ["switch"]}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"name": "Backoff", "domains": ["switch"]})
+    result = await _submit(hass, result)
     assert result["step_id"] == "rule_features"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"log_entity_info": True}
-    )
+    result = await _submit(hass, result, {"log_entity_info": True})
     assert result["step_id"] == "rule_verify"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"retry_backoff": "exponential"}
-    )
+    result = await _submit(hass, result, {"retry_backoff": "exponential"})
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -201,11 +200,8 @@ async def test_retry_backoff_and_log_entity_info_default_when_omitted(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Defaults", "domains": ["switch"]}
-    )
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"name": "Defaults", "domains": ["switch"]})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -213,23 +209,11 @@ async def test_retry_backoff_and_log_entity_info_default_when_omitted(hass):
     assert rule["log_entity_info"] is False
 
 
-async def _start_rule(hass, entry, **targeting):
-    """Walk the wizard up to the features step."""
-    targeting = {"name": "Rule", "domains": ["switch"], **targeting}
-    result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], targeting
-    )
-    return await hass.config_entries.options.async_configure(result["flow_id"], {})
-
-
 async def test_a_rule_without_any_domain_is_rejected(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "No domain", "domains": []}
-    )
+    result = await _submit(hass, result, {"name": "No domain", "domains": []})
 
     assert result["step_id"] == "add_rule"
     assert result["errors"] == {"domains": "domains_required"}
@@ -240,14 +224,10 @@ async def test_movement_mode_requires_an_attribute_to_watch(hass):
     result = await _start_rule(hass, entry, name="Movement", domains=["cover"])
     assert result["step_id"] == "rule_features"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"verification_mode": "movement"}
-    )
+    result = await _submit(hass, result, {"verification_mode": "movement"})
     assert result["step_id"] == "rule_verify"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"change_attribute": ""}
-    )
+    result = await _submit(hass, result, {"change_attribute": ""})
     assert result["step_id"] == "rule_verify"
     assert result["errors"] == {"change_attribute": "change_attribute_required"}
 
@@ -255,12 +235,8 @@ async def test_movement_mode_requires_an_attribute_to_watch(hass):
 async def test_movement_mode_is_saved_as_wait_for_change(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Movement", domains=["cover"])
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"verification_mode": "movement"}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"change_attribute": "current_position"}
-    )
+    result = await _submit(hass, result, {"verification_mode": "movement"})
+    result = await _submit(hass, result, {"change_attribute": "current_position"})
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -273,9 +249,7 @@ async def test_movement_mode_is_saved_as_wait_for_change(hass):
 async def test_delay_mode_does_not_offer_the_movement_fields(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Delay")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"verification_mode": "delay"}
-    )
+    result = await _submit(hass, result, {"verification_mode": "delay"})
     assert result["step_id"] == "rule_verify"
 
     keys = set(result["data_schema"].schema)
@@ -289,11 +263,16 @@ async def test_notifications_are_reachable_without_escalation(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Notify only")
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"escalation_enabled": False, "notify_persistent": False, "notify_service": "mobile"},
+    result = await _submit(
+        hass,
+        result,
+        {
+            "escalation_enabled": False,
+            "notify_persistent": False,
+            "notify_service": "mobile",
+        },
     )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -306,14 +285,12 @@ async def test_escalation_without_verification_skips_the_check_step(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Escalating")
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"escalation_enabled": True})
+    result = await _submit(hass, result)
     assert result["step_id"] == "rule_escalation"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_enabled": False, "escalation_cooldown": 60}
+    result = await _submit(
+        hass, result, {"escalation_check_enabled": False, "escalation_cooldown": 60}
     )
     await _save_rule(hass, result)
 
@@ -327,25 +304,23 @@ async def test_escalation_with_verification_asks_for_the_check(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Verified escalation")
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_enabled": True}
-    )
+    result = await _submit(hass, result, {"escalation_enabled": True})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result, {"escalation_check_enabled": True})
     assert result["step_id"] == "rule_escalation_check"
 
     # Both the entity and its expected state are required.
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_entity_id": "switch.gateway"}
-    )
+    result = await _submit(hass, result, {"escalation_check_entity_id": "switch.gateway"})
     assert result["step_id"] == "rule_escalation_check"
     assert result["errors"] == {"escalation_check_state": "escalation_check_required"}
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"escalation_check_entity_id": "switch.gateway", "escalation_check_state": "on"},
+    result = await _submit(
+        hass,
+        result,
+        {
+            "escalation_check_entity_id": "switch.gateway",
+            "escalation_check_state": "on",
+        },
     )
     await _save_rule(hass, result)
 
@@ -357,26 +332,23 @@ async def test_escalation_with_verification_asks_for_the_check(hass):
 async def test_editing_a_rule_prefills_the_feature_gates(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Verified", domains=["cover"])
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"verification_mode": "movement", "escalation_enabled": True}
+    result = await _submit(
+        hass, result, {"verification_mode": "movement", "escalation_enabled": True}
     )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"change_attribute": "current_position"}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"escalation_check_entity_id": "switch.gateway", "escalation_check_state": "on"},
+    result = await _submit(hass, result, {"change_attribute": "current_position"})
+    result = await _submit(hass, result, {"escalation_check_enabled": True})
+    result = await _submit(
+        hass,
+        result,
+        {
+            "escalation_check_entity_id": "switch.gateway",
+            "escalation_check_state": "on",
+        },
     )
     await _save_rule(hass, result)
     rule_id = next(iter(entry.options[OPT_RULES]))
 
-    result = await _select_menu(hass, entry, "edit_rule_select")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"rule_id": rule_id}
-    )
+    result = await _edit_rule(hass, entry, rule_id)
     result = await _pick_section(hass, result, "rule_features")
     assert result["step_id"] == "rule_features"
 
@@ -389,14 +361,10 @@ async def test_invalid_tolerances_are_rejected(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Lights", "domains": ["light"]}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"tolerances": "brightness=5"}
-    )
+    result = await _submit(hass, result, {"name": "Lights", "domains": ["light"]})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result)
+    result = await _submit(hass, result, {"tolerances": "brightness=5"})
 
     assert result["step_id"] == "rule_verify"
     assert result["errors"] == {"tolerances": "invalid_tolerances"}
@@ -406,11 +374,10 @@ async def test_disabled_rule_and_deletion_removes_its_sensor(hass):
     entry = await _create_entry(hass)
 
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Paused", "domains": ["switch"], "enabled": False}
+    result = await _submit(
+        hass, result, {"name": "Paused", "domains": ["switch"], "enabled": False}
     )
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
     await hass.async_block_till_done()
 
@@ -422,12 +389,8 @@ async def test_disabled_rule_and_deletion_removes_its_sensor(hass):
     assert ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id) is not None
 
     result = await _select_menu(hass, entry, "delete_rule_select")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"rule_id": rule_id}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"confirm": True}
-    )
+    result = await _submit(hass, result, {"rule_id": rule_id})
+    result = await _submit(hass, result, {"confirm": True})
     await hass.async_block_till_done()
 
     assert entry.options[OPT_RULES] == {}
@@ -439,9 +402,8 @@ async def test_global_settings(hass):
     result = await _select_menu(hass, entry, "global_settings")
     assert result["step_id"] == "global_settings"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"enabled": False, "default_retries": 3, "default_retry_delay": 5},
+    result = await _submit(
+        hass, result, {"enabled": False, "default_retries": 3, "default_retry_delay": 5}
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert entry.options["global"]["enabled"] is False
@@ -451,14 +413,12 @@ async def test_global_settings(hass):
 async def test_exclusions_are_skipped_and_cleared_when_unticked(hass):
     entry = await _create_entry(hass)
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"name": "No exclusion", "domains": ["switch"], "exclusions_enabled": False},
+    result = await _submit(
+        hass, result, {"name": "No exclusion", "domains": ["switch"], "exclusions_enabled": False}
     )
     assert result["step_id"] == "add_rule_services"
 
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -472,8 +432,9 @@ async def test_exclusions_are_skipped_and_cleared_when_unticked(hass):
 async def test_exclusion_step_saves_entities_devices_and_patterns(hass):
     entry = await _create_entry(hass)
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
+    result = await _submit(
+        hass,
+        result,
         {
             "name": "With exclusions",
             "domains": ["switch"],
@@ -482,8 +443,9 @@ async def test_exclusion_step_saves_entities_devices_and_patterns(hass):
     )
     assert result["step_id"] == "rule_exclude"
 
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
+    result = await _submit(
+        hass,
+        result,
         {
             "entity_id_exclude": ["switch.duplicate"],
             "device_id_exclude": ["some-device-id"],
@@ -492,8 +454,7 @@ async def test_exclusion_step_saves_entities_devices_and_patterns(hass):
     )
     assert result["step_id"] == "add_rule_services"
 
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
 
     rule = next(iter(entry.options[OPT_RULES].values()))
@@ -506,9 +467,8 @@ async def test_the_exclusion_picker_is_limited_to_the_rules_domains(hass):
     """The domain filter is what makes the list readable in the first place."""
     entry = await _create_entry(hass)
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"name": "Scoped", "domains": ["switch"], "exclusions_enabled": True},
+    result = await _submit(
+        hass, result, {"name": "Scoped", "domains": ["switch"], "exclusions_enabled": True}
     )
 
     schema = result["data_schema"].schema
@@ -521,24 +481,17 @@ async def test_the_exclusion_picker_is_limited_to_the_rules_domains(hass):
 async def test_editing_a_rule_prefills_and_can_drop_its_exclusions(hass):
     entry = await _create_entry(hass)
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": True},
+    result = await _submit(
+        hass, result, {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": True}
     )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"entity_id_exclude": ["switch.duplicate"]}
-    )
-    for _ in range(3):
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"entity_id_exclude": ["switch.duplicate"]})
+    result = await _defaults(hass, result, 3)
     await _save_rule(hass, result)
     rule_id = next(iter(entry.options[OPT_RULES]))
 
     # Re-opening the rule lists the exclusion section and tickes the gate back
     # on by itself...
-    result = await _select_menu(hass, entry, "edit_rule_select")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"rule_id": rule_id}
-    )
+    result = await _edit_rule(hass, entry, rule_id)
     assert "rule_exclude" in result["menu_options"]
     result = await _pick_section(hass, result, "add_rule")
     assert result["data_schema"]({"name": "Excluding", "domains": ["switch"]})[
@@ -547,9 +500,8 @@ async def test_editing_a_rule_prefills_and_can_drop_its_exclusions(hass):
 
     # ... and unticking it drops what was excluded, rather than leaving a
     # filter in force that nothing shows any more.
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": False},
+    result = await _submit(
+        hass, result, {"name": "Excluding", "domains": ["switch"], "exclusions_enabled": False}
     )
     assert "rule_exclude" not in result["menu_options"]
     await _save_rule(hass, result)
@@ -560,10 +512,8 @@ async def test_editing_a_rule_prefills_and_can_drop_its_exclusions(hass):
 async def test_the_menu_lists_only_the_sections_the_rule_uses(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Plain")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_enabled": False}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result, {"escalation_enabled": False})
+    result = await _submit(hass, result)
 
     assert result["step_id"] == "rule_menu"
     assert result["menu_options"] == [
@@ -578,16 +528,16 @@ async def test_the_menu_lists_only_the_sections_the_rule_uses(hass):
 async def test_the_menu_lists_the_escalation_sections_when_they_are_on(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Escalating")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"escalation_check_entity_id": "switch.gateway", "escalation_check_state": "on"},
+    result = await _submit(hass, result, {"escalation_enabled": True})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result, {"escalation_check_enabled": True})
+    result = await _submit(
+        hass,
+        result,
+        {
+            "escalation_check_entity_id": "switch.gateway",
+            "escalation_check_state": "on",
+        },
     )
 
     assert result["step_id"] == "rule_menu"
@@ -601,25 +551,24 @@ async def test_every_menu_option_has_a_label(hass):
 
     # A rule using every section there is, so the menu lists them all.
     result = await _select_menu(hass, entry, "new_rule")
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"name": "Everything", "domains": ["cover"], "exclusions_enabled": True},
+    result = await _submit(
+        hass, result, {"name": "Everything", "domains": ["cover"], "exclusions_enabled": True}
     )
     assert result["step_id"] == "rule_exclude"
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_enabled": True, "verification_mode": "movement"}
+    result = await _submit(hass, result)
+    result = await _submit(hass, result)
+    result = await _submit(
+        hass, result, {"escalation_enabled": True, "verification_mode": "movement"}
     )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"change_attribute": "current_position"}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"escalation_check_enabled": True}
-    )
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {"escalation_check_entity_id": "switch.gateway", "escalation_check_state": "on"},
+    result = await _submit(hass, result, {"change_attribute": "current_position"})
+    result = await _submit(hass, result, {"escalation_check_enabled": True})
+    result = await _submit(
+        hass,
+        result,
+        {
+            "escalation_check_entity_id": "switch.gateway",
+            "escalation_check_state": "on",
+        },
     )
 
     assert set(result["menu_options"]) == set(_menu_labels())
@@ -628,8 +577,8 @@ async def test_every_menu_option_has_a_label(hass):
 async def test_the_menu_summarises_each_section(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Summarised", domains=["switch"])
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result)
 
     placeholders = result["description_placeholders"]
     assert placeholders["name"] == "Summarised"
@@ -646,15 +595,13 @@ async def test_a_section_opened_from_the_menu_comes_back_to_it(hass):
     """What replaces going back: fix one section, land on the menu again."""
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Typo")
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result)
     assert result["step_id"] == "rule_menu"
 
     result = await _pick_section(hass, result, "add_rule")
     assert result["step_id"] == "add_rule"
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"name": "Fixed", "domains": ["switch"]}
-    )
+    result = await _submit(hass, result, {"name": "Fixed", "domains": ["switch"]})
     assert result["step_id"] == "rule_menu"
     await _save_rule(hass, result)
 
@@ -665,8 +612,8 @@ async def test_a_section_opened_from_the_menu_comes_back_to_it(hass):
 async def test_nothing_is_written_until_the_rule_is_saved(hass):
     entry = await _create_entry(hass)
     result = await _start_rule(hass, entry, name="Unsaved")
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+    result = await _submit(hass, result)
+    result = await _submit(hass, result)
 
     assert result["step_id"] == "rule_menu"
     assert entry.options[OPT_RULES] == {}
