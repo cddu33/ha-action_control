@@ -91,11 +91,17 @@ keys (`entity_id`, `device_id`, `area_id`, `label_id`, `floor_id`) are
 replaced by that entity's id, and the rest of the service data is kept
 as-is.
 
-Only one run at a time per (rule, entity) pair: if the same entity is
-commanded again while a check is still in flight, the second run waits for
-the first one to finish instead of racing it, and the older run is then
-dropped rather than re-issuing a command that no longer reflects what was
-asked. Several rules matching the same call each run independently.
+Only one run at a time per (rule, entity) pair, and the newest command
+wins: if the same entity is commanded again while a check is still in
+flight — a light asked to turn on, then off a few seconds later — the older
+check is cancelled on the spot. It stops waiting, never retries, escalates
+or replays a command that no longer reflects what was asked, and the new
+command is verified right away instead of queueing behind it. The one
+thing a cancellation doesn't cut short is a recovery action already
+running: it is left to finish, since stopping it halfway could leave a
+gateway switched off, but the command it was meant to rescue is not
+replayed after it. Several rules matching the same call each run
+independently.
 
 ### Anti-loop protection
 
@@ -575,12 +581,10 @@ For the second case, add `homeassistant` to the rule's domains, or raise
   once only leaves the last outcome on the sensor.
 - **Editing rules reloads the integration**, which cancels in-flight
   checks and resets the sensors to `idle`.
-- **A check holds its (rule, entity) slot for the whole run**, sleeps
-  included — so with escalation and a long replay delay, a new command on
-  that same entity waits before being verified. Commands that are already
-  obsolete by then are dropped rather than queued, and a run that starts
-  late still resolves immediately if the entity is already in the
-  requested state.
+- **A recovery action already running is not interrupted** by a newer
+  command on the same entity: it finishes, and only then does the new
+  check get its (rule, entity) slot. The old command is not replayed after
+  it.
 - **Only commands issued as service calls are seen.** A newer command
   cancels a check in flight, but only if it produced a `call_service`
   event a rule matches. A physical switch press, a remote bound straight to

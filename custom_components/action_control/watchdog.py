@@ -114,8 +114,16 @@ async def _run_escalation(
         script = Script(hass, validated, f"{DOMAIN}_{rule.rule_id}_escalation", DOMAIN)
         await script.async_run(context=engine.contexts.new_context())
 
-    return await _safe_call(
-        _run, "Action Control: escalation action for rule '%s' failed", rule.name
+    # Shielded: a newer command cancels the run that started the recovery
+    # action, but stopping that action halfway -- a gateway switched off and
+    # never back on -- would leave things worse than letting it finish.
+    return await asyncio.shield(
+        hass.async_create_task(
+            _safe_call(
+                _run, "Action Control: escalation action for rule '%s' failed", rule.name
+            ),
+            f"{DOMAIN}_{rule.rule_id}_escalation",
+        )
     )
 
 

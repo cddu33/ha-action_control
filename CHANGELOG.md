@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.3]
+
+### Changed
+- A newer command on an entity now **cancels** the check still running for
+  the previous one, instead of letting it run on until its next retry. Turn
+  a light on, then off a few seconds later: the "on" check stops there — no
+  more waiting, retrying, escalating or replaying "on" — and the "off"
+  command is verified straight away rather than queueing behind it, which
+  could take minutes with escalation and a long replay delay.
+- A recovery action that is already running when that happens is left to
+  finish, so a gateway restart is never cut off halfway; the old command is
+  just not replayed after it.
+
 ## [0.6.2]
 
 ### Changed

@@ -459,6 +459,76 @@ async def test_a_run_superseded_during_the_check_reports_nothing(hass):
     assert status is None or status.status is not RuleStatus.FAILED
 
 
+async def _wait_until(predicate, timeout: float = 1) -> None:
+    async def _poll() -> None:
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_poll(), timeout)
+
+
+async def test_a_newer_command_cancels_the_check_in_progress(hass):
+    """Turn on, then off a few seconds later: the "on" check is dropped on
+    the spot, and the "off" one is verified without queueing behind it."""
+    entry = make_entry(make_light_rule(check_delay=30))
+    engine = await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    turn_on_calls: list[ServiceCall] = []
+    # Never applies: left alone, the "on" check would sleep, then retry.
+    hass.services.async_register("light", "turn_on", lambda call: turn_on_calls.append(call))
+    hass.services.async_register("light", "turn_off", lambda call: None)
+    rule = next(iter(engine.rules.values()))
+
+    await hass.services.async_call(
+        "light", "turn_on", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_off", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    # Would take the full 30 s check_delay if the "on" check still held the lock.
+    await asyncio.wait_for(hass.async_block_till_done(), 1)
+
+    assert len(turn_on_calls) == 1  # the user's own call, never retried
+    status = engine.rule_status[rule.rule_id]
+    assert status.status is RuleStatus.OK
+    assert status.expected_state == "off"
+
+
+async def test_a_newer_command_stops_the_replay_but_not_the_recovery_action(hass):
+    """Cancelled mid-escalation, the recovery action still runs to its end --
+    stopping it halfway could leave a gateway switched off -- but the old
+    command is not replayed after it."""
+    rule = make_cover_rule(retries=0, escalation_replay_delay=30)
+    await _setup(hass, make_entry(rule))
+
+    hass.states.async_set("cover.volet_salon", "closed", {"current_position": 0})
+    open_calls: list[ServiceCall] = []
+    restarts: list[str] = []
+
+    async def _restart(call: ServiceCall) -> None:
+        restarts.append("started")
+        await asyncio.sleep(0.1)
+        restarts.append("finished")
+
+    hass.services.async_register("cover", "open_cover", lambda call: open_calls.append(call))
+    hass.services.async_register("cover", "close_cover", lambda call: None)
+    hass.services.async_register("script", "restart_gateway", _restart)
+    hass.services.async_register("persistent_notification", "create", lambda call: None)
+
+    await hass.services.async_call(
+        "cover", "open_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await _wait_until(lambda: restarts)
+    await hass.services.async_call(
+        "cover", "close_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await asyncio.wait_for(hass.async_block_till_done(), 1)
+
+    assert restarts == ["started", "finished"]
+    assert len(open_calls) == 1  # no replay of the cancelled "open"
+
+
 # ---- retry backoff ----
 
 
