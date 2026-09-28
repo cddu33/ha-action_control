@@ -93,13 +93,18 @@ ciblage d'origine (`entity_id`, `device_id`, `area_id`, `label_id`,
 `floor_id`) sont remplacées par l'`entity_id` concerné, le reste des
 données de service étant conservé tel quel.
 
-Une seule exécution à la fois par couple (règle, entité) : si la même
-entité reçoit une nouvelle commande alors qu'une vérification est encore en
-cours, la seconde attend la fin de la première au lieu d'entrer en
-concurrence avec elle, et l'ancienne est ensuite abandonnée plutôt que de
-réémettre une commande qui ne correspond plus à ce qui a été demandé.
-Plusieurs règles qui correspondent au même appel s'exécutent
-indépendamment.
+Une seule exécution à la fois par couple (règle, entité), et c'est la
+commande la plus récente qui l'emporte : si la même entité reçoit une
+nouvelle commande alors qu'une vérification est encore en cours — une lampe
+à qui l'on demande de s'allumer, puis de s'éteindre quelques secondes plus
+tard — l'ancienne vérification est annulée sur-le-champ. Elle cesse
+d'attendre, ne relance, n'escalade ni ne rejoue plus une commande qui ne
+correspond plus à ce qui a été demandé, et la nouvelle commande est
+vérifiée aussitôt au lieu d'attendre son tour. Seule exception : une action
+de secours déjà en cours n'est pas coupée. Elle va à son terme, car
+l'interrompre à mi-chemin pourrait laisser une passerelle éteinte, mais la
+commande qu'elle devait rattraper n'est pas rejouée ensuite. Plusieurs
+règles qui correspondent au même appel s'exécutent indépendamment.
 
 ### Protection anti-boucle
 
@@ -612,12 +617,10 @@ comparaison.
   entités à la fois ne laisse que le dernier résultat sur le capteur.
 - **Modifier une règle recharge l'intégration**, ce qui annule les
   vérifications en cours et remet les capteurs sur `idle`.
-- **Une vérification occupe son créneau (règle, entité) pendant toute sa
-  durée**, attentes comprises — avec une escalade et un long délai de rejeu,
-  une nouvelle commande sur cette même entité attend donc avant d'être
-  vérifiée. Les commandes devenues obsolètes entre-temps sont abandonnées
-  plutôt que mises en file, et une vérification qui démarre tardivement se
-  résout immédiatement si l'entité est déjà dans l'état demandé.
+- **Une action de secours déjà en cours n'est pas interrompue** par une
+  commande plus récente sur la même entité : elle va à son terme, et ce
+  n'est qu'ensuite que la nouvelle vérification obtient son créneau (règle,
+  entité). L'ancienne commande n'est pas rejouée après elle.
 - **Seules les commandes passant par un appel de service sont vues.** Une
   commande plus récente annule une vérification en cours, mais uniquement si
   elle a produit un événement `call_service` correspondant à une règle. Un

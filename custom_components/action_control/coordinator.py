@@ -44,6 +44,7 @@ class ActionControlEngine:
         self._escalation_cooldowns: dict[str, float] = {}
         self._run_tokens: dict[tuple[str, str], int] = {}
         self._tasks: set[asyncio.Task] = set()
+        self._runs: dict[tuple[str, str], asyncio.Task] = {}
         self._unsub_listener: callback | None = None
         self._store: Store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
         self.load_rules()
@@ -73,6 +74,27 @@ class ActionControlEngine:
 
     def is_current_run(self, rule_id: str, entity_id: str, token: int) -> bool:
         return self._run_tokens.get((rule_id, entity_id)) == token
+
+    def _cancel_previous_run(self, rule: Rule, entity_id: str) -> None:
+        """Stop the check still running for this (rule, entity), if any.
+
+        The newer command is the one that counts: a light asked to turn on,
+        then off a few seconds later, must not keep being retried -- nor
+        escalated, nor replayed -- towards "on" while the new check waits
+        behind it for the lock.
+        """
+        previous = self._runs.pop((rule.rule_id, entity_id), None)
+        if previous is not None and not previous.done():
+            _LOGGER.debug(
+                "Rule '%s': newer command for %s, cancelling the check still in progress",
+                rule.name,
+                entity_id,
+            )
+            previous.cancel()
+
+    def _forget_run(self, key: tuple[str, str], task: asyncio.Task) -> None:
+        if self._runs.get(key) is task:
+            del self._runs[key]
 
     # Cooldown deadlines are wall-clock epochs, not monotonic ones, so they
     # still mean something after a restart.
@@ -216,6 +238,7 @@ class ActionControlEngine:
                     comparator.format_expected_state(expected_state),
                     expected_attrs,
                 )
+                self._cancel_previous_run(rule, entity_id)
                 task = self.hass.async_create_task(
                     watchdog.async_run_watchdog(
                         self,
@@ -232,3 +255,6 @@ class ActionControlEngine:
                 )
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
+                key = (rule.rule_id, entity_id)
+                self._runs[key] = task
+                task.add_done_callback(lambda done, key=key: self._forget_run(key, done))
