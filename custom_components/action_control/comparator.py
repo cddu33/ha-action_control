@@ -79,7 +79,92 @@ def compute_expected(
                 expected_attributes[attr] = convert(value) if convert else value
                 break
 
+    if domain == "light" and expected_state == frozenset({"on"}):
+        expected_state, expected_attributes = _adjust_light_on(
+            service_data, expected_attributes, current_state
+        )
+    # A light, switch or fan that is off has no brightness or color to
+    # compare: a toggle that turns it off with brightness in its data must not
+    # then expect that brightness.
+    if expected_state == frozenset({"off"}):
+        expected_attributes = {}
+
     return expected_state, expected_attributes
+
+
+_LIGHT_COLOR_MODES = frozenset({"hs", "xy", "rgb", "rgbw", "rgbww"})
+_LIGHT_COLOR_ATTRIBUTES = ("rgb_color", "xy_color", "hs_color")
+
+
+def _adjust_light_on(
+    service_data: dict[str, Any],
+    expected_attributes: dict[str, Any],
+    current_state: State | None,
+) -> tuple[frozenset[str], dict[str, Any]]:
+    """Expect what Home Assistant will really make of a light turn-on.
+
+    The light component turns a light off when asked for brightness 0, drops
+    what the light cannot do, and emulates a color temperature the light has
+    no mode for -- which then reports no color_temp_kelvin at all. Expecting
+    the raw service data in those cases is a failure every single time.
+    """
+    for key in ("brightness", "brightness_pct"):
+        if key in service_data and _is_zero(service_data[key]):
+            return frozenset({"off"}), {}
+
+    attributes = current_state.attributes if current_state is not None else {}
+    modes = attributes.get("supported_color_modes")
+    if not modes:
+        # Capabilities unknown (no state yet, or a legacy light): keep
+        # comparing what was asked for.
+        return frozenset({"on"}), expected_attributes
+
+    modes = set(modes)
+    expected = dict(expected_attributes)
+    if modes <= {"onoff"}:
+        expected.pop("brightness", None)
+    if "color_temp" not in modes:
+        expected.pop("color_temp_kelvin", None)
+    elif isinstance(expected.get("color_temp_kelvin"), (int, float)):
+        # A light only goes as warm or as cold as it can; asking beyond its
+        # range lands on the nearest end of it.
+        low = attributes.get("min_color_temp_kelvin")
+        high = attributes.get("max_color_temp_kelvin")
+        kelvin = expected["color_temp_kelvin"]
+        if isinstance(low, (int, float)):
+            kelvin = max(kelvin, low)
+        if isinstance(high, (int, float)):
+            kelvin = min(kelvin, high)
+        expected["color_temp_kelvin"] = kelvin
+    if not modes & _LIGHT_COLOR_MODES:
+        for attr in _LIGHT_COLOR_ATTRIBUTES:
+            expected.pop(attr, None)
+    return frozenset({"on"}), expected
+
+
+def _is_zero(value: Any) -> bool:
+    try:
+        return float(value) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _normalized_rgb(value: Any) -> Any:
+    """Scale an RGB triple so its brightest channel is 255.
+
+    Lights driven in hs or xy report rgb_color at full intensity -- brightness
+    is a separate attribute -- so [200, 0, 0] comes back as [255, 0, 0]. The
+    hue is what was asked for; comparing the raw values would call it a
+    failure.
+    """
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        return value
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+        return value
+    peak = max(value)
+    if peak <= 0:
+        return value
+    return [v * 255 / peak for v in value]
 
 
 def _values_match(expected: Any, actual: Any, tolerance: float) -> bool:
@@ -124,7 +209,13 @@ def compare(
     for attr, expected in expected_attributes.items():
         actual_value = actual.attributes.get(attr)
         tolerance = tolerances.get(attr, 0)
-        if not _values_match(expected, actual_value, tolerance):
+        if attr == "rgb_color":
+            matched = _values_match(
+                _normalized_rgb(expected), _normalized_rgb(actual_value), tolerance
+            )
+        else:
+            matched = _values_match(expected, actual_value, tolerance)
+        if not matched:
             mismatches.append(Mismatch(attr, expected, actual_value))
 
     return ComparisonResult(ok=not mismatches, mismatches=mismatches)

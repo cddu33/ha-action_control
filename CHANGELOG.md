@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.4]
+
+### Fixed
+Fewer failures reported for commands that actually worked:
+- A rule that watches only some services (say `light.turn_on`) now drops its
+  check when the entity is turned off, closed, locked... by a service it does
+  not watch. It used to report the light as failing — and retry, switching it
+  back on.
+- A light `transition` is waited for: it is added to the check delay and to
+  each retry delay, instead of checking a light still fading and restarting
+  the fade with a retry.
+- `light.turn_on` with `brightness: 0` (or `brightness_pct: 0`) expects the
+  light **off**, as Home Assistant turns it off.
+- A toggle that turns something off no longer expects the attributes in its
+  data (a light that is off has no brightness).
+- A color temperature outside the light's range is expected at the nearest
+  end of that range; `color_temp_kelvin` is not compared on a light with no
+  color-temperature mode, colors on a light with no color mode, brightness on
+  an on/off-only light.
+- `rgb_color` is compared as a hue: lights driven in hs or xy report their
+  color at full intensity, so `[200, 0, 0]` comes back as `[255, 0, 0]`.
+
+### Documentation
+- `homeassistant.turn_on`/`turn_off` and scenes were wrongly listed as
+  invisible to Action Control: Home Assistant forwards them to each entity's
+  own domain, and they are seen like any other command.
+
 ## [0.6.3]
 
 ### Changed
