@@ -6,6 +6,7 @@ import logging
 
 import pytest
 from homeassistant.core import ServiceCall
+from homeassistant.setup import async_setup_component
 
 from custom_components.action_control import watchdog
 from custom_components.action_control.const import (
@@ -527,6 +528,122 @@ async def test_a_newer_command_stops_the_replay_but_not_the_recovery_action(hass
 
     assert restarts == ["started", "finished"]
     assert len(open_calls) == 1  # no replay of the cancelled "open"
+
+
+async def test_a_command_the_rule_does_not_watch_still_cancels_its_check(hass):
+    """A rule watching only turn_on must drop its check when the light is
+    turned off -- and above all not retry, switching it back on."""
+    entry = make_entry(make_light_rule(services=["turn_on"], check_delay=0.1))
+    engine = await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    turn_on_calls: list[ServiceCall] = []
+    notifications: list[dict] = []
+    hass.services.async_register("light", "turn_on", lambda call: turn_on_calls.append(call))
+    hass.services.async_register(
+        "light", "turn_off", lambda call: hass.states.async_set("light.kitchen", "off")
+    )
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+
+    await hass.services.async_call(
+        "light", "turn_on", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    await hass.services.async_call(
+        "light", "turn_off", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert len(turn_on_calls) == 1
+    assert notifications == []
+    assert engine._runs == {}  # noqa: SLF001
+
+
+async def test_homeassistant_turn_off_cancels_a_light_check(hass):
+    """homeassistant.turn_off reaches the light as a light.turn_off call of
+    its own, so it overrides a check like any other command."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    entry = make_entry(make_light_rule(services=["turn_on"], check_delay=0.1))
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    notifications: list[dict] = []
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    hass.services.async_register(
+        "light", "turn_off", lambda call: hass.states.async_set("light.kitchen", "off")
+    )
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+
+    await hass.services.async_call(
+        "light", "turn_on", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    await hass.services.async_call(
+        "homeassistant", "turn_off", target={"entity_id": "light.kitchen"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert notifications == []
+
+
+async def test_a_light_transition_is_waited_for_before_checking(hass):
+    """Checked mid-fade, a light looks wrong, and the retry restarts the fade."""
+    entry = make_entry(make_light_rule(check_delay=0, retries=1))
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    turn_on_calls: list[ServiceCall] = []
+
+    async def _fade_in(call: ServiceCall) -> None:
+        turn_on_calls.append(call)
+        await asyncio.sleep(0.1)
+        hass.states.async_set("light.kitchen", "on", {"brightness": 200})
+
+    hass.services.async_register("light", "turn_on", _fade_in)
+    hass.services.async_register("persistent_notification", "create", lambda call: None)
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200, "transition": 0.2},
+        target={"entity_id": "light.kitchen"},
+    )
+    await hass.async_block_till_done()
+
+    assert len(turn_on_calls) == 1  # never re-issued
+
+
+async def test_turning_a_light_on_at_brightness_zero_expects_it_off(hass):
+    entry = make_entry(make_light_rule())
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "on", {"brightness": 200})
+    notifications: list[dict] = []
+    hass.services.async_register(
+        "light", "turn_on", lambda call: hass.states.async_set("light.kitchen", "off")
+    )
+    hass.services.async_register(
+        "persistent_notification",
+        "create",
+        lambda call: notifications.append(dict(call.data)),
+    )
+
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 0},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert notifications == []
 
 
 # ---- retry backoff ----

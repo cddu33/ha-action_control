@@ -106,6 +106,15 @@ l'interrompre à mi-chemin pourrait laisser une passerelle éteinte, mais la
 commande qu'elle devait rattraper n'est pas rejouée ensuite. Plusieurs
 règles qui correspondent au même appel s'exécutent indépendamment.
 
+Une commande qui fixe l'état de l'entité — `turn_on`, `turn_off`,
+`toggle`, `open_cover`, `lock`... — annule les vérifications de **toutes**
+les règles qui surveillent cette entité, pas seulement de celles qui
+surveillent ce service : une règle limitée à `light.turn_on` abandonne sa
+vérification quand la lampe est éteinte, au lieu de la signaler en échec
+et de la rallumer. Un appel qui ne fait qu'ajuster l'entité
+(`set_temperature`, `set_cover_position`...) n'annule que les vérifications
+des règles qui le surveillent.
+
 ### Protection anti-boucle
 
 Chaque commande réémise par Action Control (relance, action d'escalade
@@ -367,6 +376,25 @@ données de service dont le nom diffère de celui de l'attribut d'état :
   `kelvin` → `color_temp_kelvin` ; un `brightness` explicite dans l'appel
   reste prioritaire
 
+Pour les lampes, l'attendu suit ce que Home Assistant fait réellement de
+l'appel plutôt que ses données brutes :
+
+- `brightness: 0` (ou `brightness_pct: 0`) **éteint** la lampe : c'est
+  donc `off` qui est attendu.
+- Une température de couleur hors de la plage de la lampe est attendue à
+  la borne la plus proche (`min_color_temp_kelvin` /
+  `max_color_temp_kelvin`).
+- Ce que la lampe ne peut pas rapporter n'est pas comparé :
+  `color_temp_kelvin` sur une lampe sans mode `color_temp` (Home Assistant
+  l'émule en couleur), les couleurs sur une lampe sans mode couleur, la
+  luminosité sur une lampe uniquement on/off.
+- Une `transition` dans l'appel s'ajoute au `check_delay`, et à chaque
+  délai de relance : une lampe encore en fondu n'est pas un échec, et la
+  relancer ne ferait que recommencer le fondu.
+
+Quel que soit le domaine, un appel qui **éteint** n'attend aucun attribut :
+une lampe éteinte n'a pas de luminosité à comparer.
+
 **Règles de comparaison.**
 
 - Nombres : correspondance si `|attendu − réel| ≤ tolérance` (tolérance
@@ -374,6 +402,11 @@ données de service dont le nom diffère de celui de l'attribut d'état :
 - Listes/tuples (`rgb_color`, `xy_color`...) : comparés élément par
   élément avec la même tolérance ; deux longueurs différentes ne
   correspondent jamais.
+- `rgb_color` est comparé comme une teinte : les deux côtés sont d'abord
+  mis à l'échelle pour que leur canal le plus fort vaille 255. Les lampes
+  pilotées en hs ou xy rapportent leur couleur à pleine intensité — la
+  luminosité est un attribut à part — donc `[200, 0, 0]` revient en
+  `[255, 0, 0]`, ce qui n'est pas un échec.
 - Texte, booléens, tout le reste : égalité stricte.
 - Un attribut attendu à `None` est toujours considéré comme satisfait ;
   une entité sans état du tout est toujours en écart.
@@ -572,9 +605,10 @@ ligne finale. C'est la nouvelle vérification qui journalisera son résultat.
 1. Vérifiez l'interrupteur général dans *Paramètres globaux*.
 2. Repérez la ligne de debug `call_service ...` et comparez son domaine à
    ceux de votre règle : une règle ne réagit qu'aux appels dont le
-   **domaine** figure dans sa liste, et certains raccourcis appellent les
-   services sous leur propre domaine (`homeassistant.turn_on` est un appel
-   du domaine `homeassistant`).
+   **domaine** figure dans sa liste. `homeassistant.turn_on`/`turn_off`/
+   `toggle` et les scènes ne posent pas de problème : Home Assistant les
+   transmet au domaine propre de chaque entité (`light.turn_on`...), et
+   c'est cet appel transmis qu'il faut chercher.
 3. `... resolved to no entities` signifie que l'appel ne portait aucune
    cible exploitable ; `has no state, nothing to watch` signifie que
    l'entité n'existe pas dans Home Assistant (une entité désactivée n'est
@@ -592,22 +626,20 @@ Si l'écart montre l'état *inverse* de celui demandé — attendu `on`, actuel
 une nouvelle commande avant la fin de la vérification, plutôt que d'avoir
 échoué à appliquer la première.
 
-Une commande plus récente annule normalement la vérification en cours, mais
-seulement si elle parvient à Action Control sous forme d'événement
-`call_service` correspondant à la même règle. Ce n'est pas le cas quand :
+Une commande plus récente annule la vérification en cours dès qu'elle
+passe par Home Assistant comme appel de service — depuis l'interface, une
+automatisation, un script, une scène ou `homeassistant.turn_off`, peu
+importe. Ce qu'elle ne peut pas voir, c'est une commande qui ne passe
+jamais par Home Assistant : un **interrupteur physique**, ou une
+télécommande **liée directement** à l'appareil (groupes et liaisons
+Zigbee). Dans ce cas, augmentez `check_delay` pour laisser la situation se
+stabiliser avant la comparaison, ou excluez l'entité de la règle.
 
-- quelqu'un a appuyé sur un **interrupteur physique**, ou qu'une
-  télécommande est **liée directement** à l'appareil (les groupes et
-  liaisons Zigbee ne remontent jamais à Home Assistant comme appel de
-  service) ;
-- la commande est passée par **`homeassistant.turn_on`/`turn_off`**, ou par
-  une scène ou un script qui les utilise — ce sont des appels du domaine
-  `homeassistant`, donc une règle surveillant `light` ou `switch` ne leur
-  correspond pas.
-
-Pour ce second cas, ajoutez `homeassistant` aux domaines de la règle, ou
-augmentez `check_delay` pour laisser la situation se stabiliser avant la
-comparaison.
+Si l'écart n'est pas l'état inverse mais un attribut légèrement décalé —
+une couleur, une température de couleur — élargissez la tolérance de cet
+attribut, ou retirez-le des *Attributs à vérifier* : ce qu'une ampoule
+rapporte est sa propre interprétation de la demande, et certaines
+arrondissent plus que d'autres.
 
 ## Limites connues
 
@@ -621,13 +653,10 @@ comparaison.
   commande plus récente sur la même entité : elle va à son terme, et ce
   n'est qu'ensuite que la nouvelle vérification obtient son créneau (règle,
   entité). L'ancienne commande n'est pas rejouée après elle.
-- **Seules les commandes passant par un appel de service sont vues.** Une
-  commande plus récente annule une vérification en cours, mais uniquement si
-  elle a produit un événement `call_service` correspondant à une règle. Un
-  appui sur un interrupteur physique, une télécommande liée directement à
-  l'ampoule, ou `homeassistant.turn_off` (qui appartient au domaine
-  `homeassistant`, pas à `light`/`switch`) sont invisibles : l'entité bouge,
-  la vérification n'en sait rien, et signale l'écart comme un échec. Voir
+- **Seules les commandes passant par un appel de service sont vues.** Un
+  appui sur un interrupteur physique, ou une télécommande liée directement
+  à l'ampoule, sont invisibles : l'entité bouge, la vérification n'en sait
+  rien, et signale l'écart comme un échec. Voir
   [Quand une règle signale un échec qui n'en est pas un](#quand-une-règle-signale-un-échec-qui-nen-est-pas-un).
 - **Le rejeu après escalade n'est pas vérifié** ; c'est la dernière action
   de la séquence.

@@ -121,3 +121,71 @@ def test_compute_expected_uses_service_data_alias():
     )
     assert expected_state is None
     assert expected_attrs == {"current_position": 42}
+
+
+# ---- what Home Assistant really makes of a light turn-on ----
+
+
+def _light(state: str = "on", **attrs) -> State:
+    return State("light.test", state, attrs)
+
+
+def test_compute_expected_brightness_zero_means_off():
+    for data in ({"brightness": 0}, {"brightness_pct": 0}):
+        expected_state, expected_attrs = comparator.compute_expected(
+            "light", "turn_on", data, ["brightness"], _light()
+        )
+        assert expected_state == frozenset({"off"})
+        assert expected_attrs == {}
+
+
+def test_compute_expected_toggle_to_off_expects_no_attributes():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "light", "toggle", {"brightness": 200}, ["brightness"], _light("on")
+    )
+    assert expected_state == frozenset({"off"})
+    assert expected_attrs == {}
+
+
+def test_compute_expected_clamps_color_temp_to_the_light_range():
+    light = _light(
+        supported_color_modes=["color_temp"],
+        min_color_temp_kelvin=2700,
+        max_color_temp_kelvin=6500,
+    )
+    _, expected_attrs = comparator.compute_expected(
+        "light", "turn_on", {"color_temp_kelvin": 2000}, ["color_temp_kelvin"], light
+    )
+    assert expected_attrs == {"color_temp_kelvin": 2700}
+
+
+def test_compute_expected_drops_what_the_light_cannot_report():
+    # A color-only light emulates a color temperature in hs: it then reports
+    # no color_temp_kelvin at all.
+    _, expected_attrs = comparator.compute_expected(
+        "light",
+        "turn_on",
+        {"color_temp_kelvin": 3000},
+        ["color_temp_kelvin"],
+        _light(supported_color_modes=["hs"]),
+    )
+    assert expected_attrs == {}
+
+    _, expected_attrs = comparator.compute_expected(
+        "light",
+        "turn_on",
+        {"brightness": 100, "rgb_color": [255, 0, 0]},
+        ["brightness", "rgb_color"],
+        _light(supported_color_modes=["onoff"]),
+    )
+    assert expected_attrs == {}
+
+
+def test_rgb_color_is_compared_as_a_hue_not_as_raw_values():
+    # An hs or xy light reports its color at full intensity.
+    assert comparator.compare(
+        "on", {"rgb_color": [200, 0, 0]}, {"rgb_color": 5}, _light(rgb_color=(255, 0, 0))
+    ).ok
+    assert not comparator.compare(
+        "on", {"rgb_color": [200, 0, 0]}, {"rgb_color": 5}, _light(rgb_color=(0, 0, 255))
+    ).ok

@@ -33,6 +33,18 @@ def _strip_target_keys(service_data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in service_data.items() if k not in _TARGET_KEYS}
 
 
+def _transition_seconds(service_data: dict[str, Any]) -> float:
+    """How long the call itself asked the change to take (light transitions).
+
+    Checking before it is over compares a light still fading, and the retry
+    that follows restarts the fade -- a slow transition could then never pass.
+    """
+    try:
+        return max(float(service_data.get("transition") or 0), 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _compute_retry_delay(base_delay: float, backoff: str, attempt: int) -> float:
     """Delay before the next retry, given the backoff mode and attempt number.
 
@@ -374,7 +386,8 @@ async def async_run_watchdog(
                 current_value,
             )
         else:
-            await asyncio.sleep(rule.check_delay)
+            transition = _transition_seconds(service_data)
+            await asyncio.sleep(rule.check_delay + transition)
             attempt = 0
             final_state = hass.states.get(entity_id)
             result = comparator.compare(
@@ -406,6 +419,7 @@ async def async_run_watchdog(
                 await _reissue_command(engine, domain, service, entity_id, service_data)
                 await asyncio.sleep(
                     _compute_retry_delay(rule.retry_delay, rule.retry_backoff, attempt)
+                    + transition
                 )
                 final_state = hass.states.get(entity_id)
                 result = comparator.compare(

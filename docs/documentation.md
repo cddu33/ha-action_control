@@ -103,6 +103,14 @@ gateway switched off, but the command it was meant to rescue is not
 replayed after it. Several rules matching the same call each run
 independently.
 
+A command that sets the entity's state — `turn_on`, `turn_off`, `toggle`,
+`open_cover`, `lock`, ... — cancels the checks of **every** rule watching
+that entity, not only of the rules that watch that service: a rule
+limited to `light.turn_on` drops its check when the light is turned off,
+rather than reporting it as failing and switching it back on. A call that
+only adjusts the entity (`set_temperature`, `set_cover_position`, ...)
+cancels only the checks of rules that watch it.
+
 ### Anti-loop protection
 
 Every command Action Control re-issues (a retry, the escalation action
@@ -348,12 +356,33 @@ state attribute name:
 - `light.turn_on`: `brightness_pct` → `brightness` (converted to 0–255) and
   `kelvin` → `color_temp_kelvin`; an explicit `brightness` in the call wins
 
+For lights, the expectation follows what Home Assistant actually does with
+the call rather than its raw data:
+
+- `brightness: 0` (or `brightness_pct: 0`) turns the light **off**, so
+  `off` is expected.
+- A color temperature outside the light's range is expected at the nearest
+  end of it (`min_color_temp_kelvin` / `max_color_temp_kelvin`).
+- What the light cannot report is not compared: `color_temp_kelvin` on a
+  light with no `color_temp` mode (Home Assistant emulates it in color),
+  colors on a light with no color mode, brightness on an on/off-only light.
+- A `transition` in the call is added to `check_delay`, and to each retry
+  delay: a light still fading is not a failure, and retrying would only
+  restart the fade.
+
+Whatever the domain, a call that turns something **off** expects no
+attributes: a light that is off has no brightness to compare.
+
 **Comparison rules.**
 
 - Numbers: match when `|expected − actual| ≤ tolerance` (tolerance `0`
   unless configured).
 - Lists/tuples (`rgb_color`, `xy_color`, ...): compared element by element
   with the same tolerance; different lengths never match.
+- `rgb_color` is compared as a hue: both sides are scaled so that their
+  brightest channel is 255 first. Lights driven in hs or xy report their
+  color at full intensity — brightness is a separate attribute — so
+  `[200, 0, 0]` comes back as `[255, 0, 0]`, which is not a failure.
 - Text, booleans, anything else: exact match.
 - An attribute expected to be `None` always counts as satisfied; an entity
   with no state at all is always a mismatch.
@@ -542,8 +571,9 @@ line. The newer run logs its own outcome instead.
 1. Check the master switch in *Global settings*.
 2. Find the `call_service ...` debug line and compare the domain in it
    with your rule's domains: a rule only reacts to calls whose **domain**
-   is in its list, and some helpers call services under their own domain
-   (`homeassistant.turn_on` is a call in the `homeassistant` domain).
+   is in its list. `homeassistant.turn_on`/`turn_off`/`toggle` and scenes
+   are fine: Home Assistant forwards them to each entity's own domain
+   (`light.turn_on`, ...), and that forwarded call is the one to look for.
 3. `... resolved to no entities` means the call carried no resolvable
    target; `has no state, nothing to watch` means the entity does not exist
    in Home Assistant (a disabled entity never gets watched either).
@@ -559,19 +589,18 @@ actual `off`, with the attributes at `None` — the entity was almost
 certainly commanded again before the check finished, rather than failing to
 apply the command.
 
-A newer command normally cancels the check in flight, but only when it
-reaches Action Control as a `call_service` event that the same rule
-matches. It doesn't when:
+A newer command cancels the check in flight whenever it reaches Home
+Assistant as a service call — from the UI, an automation, a script, a
+scene or `homeassistant.turn_off` alike. What it cannot see is a command
+that never goes through Home Assistant: a **physical switch**, or a remote
+**bound directly** to the device (Zigbee groups/bindings). For those, raise
+`check_delay` so the dust settles before the comparison, or exclude the
+entity from the rule.
 
-- someone pressed a **physical switch**, or a remote is **bound directly**
-  to the device (Zigbee groups/bindings never reach Home Assistant as a
-  service call);
-- the command went through **`homeassistant.turn_on`/`turn_off`**, or a
-  scene or script that does — those are calls in the `homeassistant`
-  domain, so a rule watching `light` or `switch` doesn't match them.
-
-For the second case, add `homeassistant` to the rule's domains, or raise
-`check_delay` so the dust settles before the comparison.
+If the mismatch is not the opposite state but an attribute slightly off —
+a color, a color temperature — widen that attribute's tolerance, or take
+it out of *Attributes to check*: what a bulb reports back is its own
+rendering of the request, and some round it more than others.
 
 ## Known limitations
 
@@ -585,11 +614,8 @@ For the second case, add `homeassistant` to the rule's domains, or raise
   command on the same entity: it finishes, and only then does the new
   check get its (rule, entity) slot. The old command is not replayed after
   it.
-- **Only commands issued as service calls are seen.** A newer command
-  cancels a check in flight, but only if it produced a `call_service`
-  event a rule matches. A physical switch press, a remote bound straight to
-  the bulb, or `homeassistant.turn_off` (which belongs to the
-  `homeassistant` domain, not `light`/`switch`) are invisible — the entity
+- **Only commands issued as service calls are seen.** A physical switch
+  press, or a remote bound straight to the bulb, is invisible — the entity
   moves, the check knows nothing about it, and reports the mismatch as a
   failure. See [When a rule reports a failure that isn't
   one](#when-a-rule-reports-a-failure-that-isnt-one).

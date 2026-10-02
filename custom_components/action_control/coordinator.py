@@ -92,6 +92,35 @@ class ActionControlEngine:
             )
             previous.cancel()
 
+    def _cancel_runs_overridden_by(
+        self, domain: str, service: str, entities: set[str]
+    ) -> None:
+        """Cancel checks, from any rule, that this call has just overruled.
+
+        A rule watching only light.turn_on still has to drop its check when
+        the light is turned off: it would otherwise report the light as
+        failing -- and retry, switching it back on. Only a call that sets
+        the entity's state counts; one that merely tweaks it does not.
+        """
+        for key in list(self._runs):
+            rule_id, entity_id = key
+            if entity_id not in entities or entity_id.split(".", 1)[0] != domain:
+                continue
+            state = self.hass.states.get(entity_id)
+            if comparator.expected_states_for(domain, service, state) is None:
+                continue
+            task = self._runs.pop(key)
+            if not task.done():
+                rule = self.rules.get(rule_id)
+                _LOGGER.debug(
+                    "Rule '%s': %s.%s overrides the check in progress on %s, cancelling it",
+                    rule.name if rule else rule_id,
+                    domain,
+                    service,
+                    entity_id,
+                )
+                task.cancel()
+
     def _forget_run(self, key: tuple[str, str], task: asyncio.Task) -> None:
         if self._runs.get(key) is task:
             del self._runs[key]
@@ -195,16 +224,17 @@ class ActionControlEngine:
             for rule in self.rules.values()
             if rule.enabled and matching.rule_matches_service(rule, domain, service)
         ]
-        if not matching_rules:
+        if not matching_rules and not self._runs:
             return
 
-        _LOGGER.debug(
-            "call_service %s.%s matches rule(s) %s, resolving targets from %s",
-            domain,
-            service,
-            [rule.name for rule in matching_rules],
-            service_data,
-        )
+        if matching_rules:
+            _LOGGER.debug(
+                "call_service %s.%s matches rule(s) %s, resolving targets from %s",
+                domain,
+                service,
+                [rule.name for rule in matching_rules],
+                service_data,
+            )
 
         # Entity resolution and expected-state computation happen entirely
         # synchronously, in this same callback invocation, so that a
@@ -212,6 +242,12 @@ class ActionControlEngine:
         # was the instant the event fired -- not from a state that may have
         # already changed by the time an async-scheduled task got to run.
         entities = matching.resolve_target_entities(self.hass, service_data)
+        # Before the matching rules start their own: a check whose rule does
+        # not watch this service must still give way to it.
+        if self._runs:
+            self._cancel_runs_overridden_by(domain, service, entities)
+        if not matching_rules:
+            return
         if not entities:
             _LOGGER.debug("%s.%s resolved to no entities, nothing to watch", domain, service)
             return
