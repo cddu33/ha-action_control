@@ -334,3 +334,6 @@ async def test_a_check_cancelled_by_an_unwatched_service_leaves_no_retrying(hass
     await _command(hass, bulb.entity_id, "turn_off", {})
 
     assert engine.rule_status[rule.rule_id].status is RuleStatus.IDLE
+    # Let the slow bulb report: a timer left pending fails the test teardown.
+    await asyncio.sleep(0.2)
+    await hass.async_block_till_done()
