@@ -20,7 +20,7 @@ from homeassistant.helpers.storage import Store
 from . import comparator, matching, watchdog
 from .const import CONF_GLOBAL_ENABLED, DOMAIN, ISSUE_STALE_TARGET, OPT_GLOBAL, OPT_RULES
 from .context_registry import SelfIssuedContexts
-from .models import Rule, RuleRunStatus
+from .models import Rule, RuleRunStatus, RuleStatus
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,14 +83,31 @@ class ActionControlEngine:
         escalated, nor replayed -- towards "on" while the new check waits
         behind it for the lock.
         """
-        previous = self._runs.pop((rule.rule_id, entity_id), None)
-        if previous is not None and not previous.done():
+        if self._cancel_run((rule.rule_id, entity_id)):
             _LOGGER.debug(
                 "Rule '%s': newer command for %s, cancelling the check still in progress",
                 rule.name,
                 entity_id,
             )
-            previous.cancel()
+
+    def _cancel_run(self, key: tuple[str, str]) -> bool:
+        """Cancel the run for (rule, entity), if one is still going."""
+        task = self._runs.pop(key, None)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        # A cancelled run publishes nothing more. Left as it is, the sensor
+        # would read "retrying" until the rule's next command -- forever, when
+        # the command that cancelled it is one the rule does not watch.
+        rule_id, entity_id = key
+        status = self.rule_status.get(rule_id)
+        if (
+            status is not None
+            and status.entity_id == entity_id
+            and status.status is RuleStatus.RETRYING
+        ):
+            self.set_status(rule_id, RuleRunStatus(entity_id=entity_id))
+        return True
 
     def _cancel_runs_overridden_by(
         self, domain: str, service: str, entities: set[str]
@@ -109,8 +126,7 @@ class ActionControlEngine:
             state = self.hass.states.get(entity_id)
             if comparator.expected_states_for(domain, service, state) is None:
                 continue
-            task = self._runs.pop(key)
-            if not task.done():
+            if self._cancel_run(key):
                 rule = self.rules.get(rule_id)
                 _LOGGER.debug(
                     "Rule '%s': %s.%s overrides the check in progress on %s, cancelling it",
@@ -119,7 +135,6 @@ class ActionControlEngine:
                     service,
                     entity_id,
                 )
-                task.cancel()
 
     def _forget_run(self, key: tuple[str, str], task: asyncio.Task) -> None:
         if self._runs.get(key) is task:

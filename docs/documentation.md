@@ -89,7 +89,15 @@ flowchart TD
 Each retry re-issues the command for that one entity: the original target
 keys (`entity_id`, `device_id`, `area_id`, `label_id`, `floor_id`) are
 replaced by that entity's id, and the rest of the service data is kept
-as-is.
+as-is — with two exceptions:
+
+- a `toggle` is re-issued as the service it stood for (`turn_on`/`turn_off`,
+  `open_cover`/`close_cover`, ...): re-issued as a toggle, it would flip the
+  entity as it is *now*, turning off a light that came on with the wrong
+  brightness;
+- relative or one-off parameters (`brightness_step`, `brightness_step_pct`,
+  `flash`) are left out, so a retry never dims the light one more step or
+  blinks it again.
 
 Only one run at a time per (rule, entity) pair, and the newest command
 wins: if the same entity is commanded again while a check is still in
@@ -363,9 +371,23 @@ the call rather than its raw data:
   `off` is expected.
 - A color temperature outside the light's range is expected at the nearest
   end of it (`min_color_temp_kelvin` / `max_color_temp_kelvin`).
-- What the light cannot report is not compared: `color_temp_kelvin` on a
-  light with no `color_temp` mode (Home Assistant emulates it in color),
-  colors on a light with no color mode, brightness on an on/off-only light.
+- What the light cannot do is not compared: colors on a light with no
+  color mode, brightness on an on/off-only light. A color temperature on a
+  light with no `color_temp` mode is emulated in color by Home Assistant,
+  and compared as that color.
+- **Colors are compared as a chromaticity**, `xy_color`, whichever form the
+  call used (`rgb_color`, `hs_color`, `xy_color`, `color_name`,
+  `rgbw_color`, `rgbww_color`) and whichever of these the rule lists. A
+  bulb that is not driven in RGB never echoes `rgb_color` back: it stores
+  xy or hue/saturation, clips the color to its gamut, and Home Assistant
+  recomputes `rgb_color` from that at full intensity — pure red on a Hue
+  bulb comes back as `[255, 43, 0]`. The expected point is computed the way
+  Home Assistant converts the request for that light. Only a light that
+  works in RGB is compared on `rgb_color`.
+- A `flash` blinks the light and leaves it as it was: nothing is checked.
+- Dimming down with a negative `brightness_step` / `brightness_step_pct`
+  may end at zero, which turns the light off: both `on` and `off` are
+  accepted.
 - A `transition` in the call is added to `check_delay`, and to each retry
   delay: a light still fading is not a failure, and retrying would only
   restart the fade.
@@ -377,12 +399,15 @@ attributes: a light that is off has no brightness to compare.
 
 - Numbers: match when `|expected − actual| ≤ tolerance` (tolerance `0`
   unless configured).
-- Lists/tuples (`rgb_color`, `xy_color`, ...): compared element by element
+- Lists/tuples (`rgb_color`, `hs_color`, ...): compared element by element
   with the same tolerance; different lengths never match.
-- `rgb_color` is compared as a hue: both sides are scaled so that their
-  brightest channel is 255 first. Lights driven in hs or xy report their
-  color at full intensity — brightness is a separate attribute — so
-  `[200, 0, 0]` comes back as `[255, 0, 0]`, which is not a failure.
+- `xy_color` is compared by distance, and never more strictly than
+  **0.06**: a bulb moves a color outside its gamut to the nearest point it
+  can show — up to 0.047 for a saturated green on the usual Zigbee/Hue
+  gamut — while colors one would call different are at least 0.09 apart
+  (blue/purple 0.09, red/orange 0.12). A larger configured tolerance wins.
+- `rgb_color` matches either as reported or at full intensity: RGB lights
+  report one or the other.
 - Text, booleans, anything else: exact match.
 - An attribute expected to be `None` always counts as satisfied; an entity
   with no state at all is always a mismatch.
@@ -405,7 +430,7 @@ outcome:
 
 | State | Meaning |
 |---|---|
-| `idle` | No check has run yet (also the state right after a reload). |
+| `idle` | No check has run yet (also the state right after a reload), or the last one was cancelled by a newer command. |
 | `ok` | Last check succeeded — immediately, or after a retry. |
 | `retrying` | A check is in progress and the command is being re-issued. |
 | `escalated` | Verification failed and the escalation action was run. |
@@ -597,10 +622,16 @@ that never goes through Home Assistant: a **physical switch**, or a remote
 `check_delay` so the dust settles before the comparison, or exclude the
 entity from the rule.
 
-If the mismatch is not the opposite state but an attribute slightly off —
-a color, a color temperature — widen that attribute's tolerance, or take
-it out of *Attributes to check*: what a bulb reports back is its own
-rendering of the request, and some round it more than others.
+If the mismatch is the opposite state and the light *did* end up obeying,
+just late, it answered after the whole check window —
+`check_delay + retries × retry_delay`, 6 seconds by default. Cloud lights
+and busy Zigbee meshes can take longer: raise `check_delay`.
+
+If the mismatch is not the opposite state but an attribute slightly off,
+widen that attribute's tolerance, or take it out of *Attributes to check*:
+what a bulb reports back is its own rendering of the request, and some
+round it more than others — some refuse to go below a minimum brightness,
+for instance.
 
 ## Known limitations
 

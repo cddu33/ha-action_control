@@ -19,6 +19,7 @@ from homeassistant.helpers.script import Script, async_validate_actions_config
 
 from . import comparator, messages
 from .const import DOMAIN, MAX_RETRY_DELAY, RETRY_BACKOFF_EXPONENTIAL, RETRY_BACKOFF_LINEAR
+from .domain_defaults import TOGGLE_OPEN_CLOSE_DOMAINS
 from .models import ComparisonResult, Mismatch, Rule, RuleRunStatus, RuleStatus
 
 if TYPE_CHECKING:
@@ -95,14 +96,47 @@ async def _safe_call(
     return True
 
 
+# Relative or one-off: replaying them would step the brightness again, or
+# blink the light again, instead of asking for the same result.
+_NOT_REPLAYED = {"brightness_step", "brightness_step_pct", "flash"}
+
+
+def _reissued_call(
+    domain: str, service: str, service_data: dict[str, Any], expected_state: Any
+) -> tuple[str, dict[str, Any]]:
+    """The call that asks again for the expected result.
+
+    A toggle is replayed as the explicit service it was meant to be: replayed
+    as a toggle, it flips whatever the entity is now -- turning off a light
+    that is on and only has the wrong brightness.
+    """
+    data = {k: v for k, v in _strip_target_keys(service_data).items() if k not in _NOT_REPLAYED}
+    if service != "toggle" or not expected_state:
+        return service, data
+    states = {expected_state} if isinstance(expected_state, str) else set(expected_state)
+    if domain in TOGGLE_OPEN_CLOSE_DOMAINS:
+        _, when_open, when_closed = TOGGLE_OPEN_CLOSE_DOMAINS[domain]
+        if states == when_closed:
+            return f"open_{domain}", {}
+        if states == when_open:
+            return f"close_{domain}", {}
+    elif states == {"on"}:
+        return "turn_on", data
+    elif states == {"off"}:
+        # turn_off takes no brightness or color: only a transition survives.
+        return "turn_off", {k: v for k, v in data.items() if k == "transition"}
+    return service, data
+
+
 async def _reissue_command(
     engine: ActionControlEngine,
     domain: str,
     service: str,
     entity_id: str,
     service_data: dict[str, Any],
+    expected_state: Any = None,
 ) -> bool:
-    data = _strip_target_keys(service_data)
+    service, data = _reissued_call(domain, service, service_data, expected_state)
     ctx = engine.contexts.new_context()
     return await _safe_call(
         lambda: engine.hass.services.async_call(
@@ -362,7 +396,9 @@ async def async_run_watchdog(
                     hass.states.get(entity_id),
                     started_at,
                 )
-                await _reissue_command(engine, domain, service, entity_id, service_data)
+                await _reissue_command(
+                    engine, domain, service, entity_id, service_data, expected_state
+                )
                 moved = await _wait_for_attribute_change(
                     hass, entity_id, rule.change_attribute, baseline, rule.change_timeout
                 )
@@ -416,7 +452,9 @@ async def async_run_watchdog(
                     service,
                 )
                 _publish(engine, rule, status, RuleStatus.RETRYING, final_state, started_at)
-                await _reissue_command(engine, domain, service, entity_id, service_data)
+                await _reissue_command(
+                    engine, domain, service, entity_id, service_data, expected_state
+                )
                 await asyncio.sleep(
                     _compute_retry_delay(rule.retry_delay, rule.retry_backoff, attempt)
                     + transition
@@ -472,7 +510,9 @@ async def async_run_watchdog(
                 service,
                 entity_id,
             )
-            await _reissue_command(engine, domain, service, entity_id, service_data)
+            await _reissue_command(
+                engine, domain, service, entity_id, service_data, expected_state
+            )
         elif can_escalate:
             _LOGGER.debug(
                 "Rule '%s': retries exhausted for %s, escalation still in cooldown",
