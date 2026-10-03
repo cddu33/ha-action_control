@@ -159,9 +159,9 @@ def test_compute_expected_clamps_color_temp_to_the_light_range():
     assert expected_attrs == {"color_temp_kelvin": 2700}
 
 
-def test_compute_expected_drops_what_the_light_cannot_report():
+def test_compute_expected_checks_an_emulated_color_temp_as_a_color():
     # A color-only light emulates a color temperature in hs: it then reports
-    # no color_temp_kelvin at all.
+    # no color_temp_kelvin at all, but the color it shows instead.
     _, expected_attrs = comparator.compute_expected(
         "light",
         "turn_on",
@@ -169,7 +169,13 @@ def test_compute_expected_drops_what_the_light_cannot_report():
         ["color_temp_kelvin"],
         _light(supported_color_modes=["hs"]),
     )
-    assert expected_attrs == {}
+    assert set(expected_attrs) == {"xy_color"}
+    assert comparator.compare(
+        "on", expected_attrs, {}, _light(xy_color=(0.49, 0.38))
+    ).ok
+
+
+def test_compute_expected_drops_what_the_light_cannot_report():
 
     _, expected_attrs = comparator.compute_expected(
         "light",

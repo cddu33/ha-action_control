@@ -649,6 +649,31 @@ async def test_turning_a_light_on_at_brightness_zero_expects_it_off(hass):
 # ---- retry backoff ----
 
 
+def test_a_toggle_is_replayed_as_the_service_it_stood_for():
+    replay = watchdog._reissued_call  # noqa: SLF001
+
+    assert replay("light", "toggle", {"brightness": 200}, frozenset({"on"})) == (
+        "turn_on",
+        {"brightness": 200},
+    )
+    # turn_off rejects brightness: only a transition is carried over.
+    assert replay(
+        "light", "toggle", {"brightness": 200, "transition": 2}, frozenset({"off"})
+    ) == ("turn_off", {"transition": 2})
+    assert replay("cover", "toggle", {}, frozenset({"open", "opening"})) == ("open_cover", {})
+    assert replay("valve", "toggle", {}, frozenset({"closed", "closing"})) == (
+        "close_valve",
+        {},
+    )
+    # Relative steps and flashes are never replayed; targets are dropped.
+    assert replay(
+        "light",
+        "turn_on",
+        {"entity_id": "light.x", "brightness_step_pct": 10, "flash": "short"},
+        frozenset({"on"}),
+    ) == ("turn_on", {})
+
+
 def test_compute_retry_delay_constant_ignores_attempt():
     for attempt in (1, 2, 5):
         assert watchdog._compute_retry_delay(5, RETRY_BACKOFF_CONSTANT, attempt) == 5

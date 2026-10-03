@@ -91,7 +91,15 @@ flowchart TD
 Chaque relance réémet la commande pour cette seule entité : les clés de
 ciblage d'origine (`entity_id`, `device_id`, `area_id`, `label_id`,
 `floor_id`) sont remplacées par l'`entity_id` concerné, le reste des
-données de service étant conservé tel quel.
+données de service étant conservé tel quel — à deux exceptions près :
+
+- un `toggle` est réémis sous la forme du service qu'il représentait
+  (`turn_on`/`turn_off`, `open_cover`/`close_cover`...) : réémis tel quel, il
+  inverserait l'entité telle qu'elle est *maintenant*, et éteindrait une
+  lampe allumée avec la mauvaise luminosité ;
+- les paramètres relatifs ou ponctuels (`brightness_step`,
+  `brightness_step_pct`, `flash`) sont retirés, pour qu'une relance ne
+  baisse jamais la lampe d'un cran de plus ni ne la refasse clignoter.
 
 Une seule exécution à la fois par couple (règle, entité), et c'est la
 commande la plus récente qui l'emporte : si la même entité reçoit une
@@ -384,10 +392,26 @@ l'appel plutôt que ses données brutes :
 - Une température de couleur hors de la plage de la lampe est attendue à
   la borne la plus proche (`min_color_temp_kelvin` /
   `max_color_temp_kelvin`).
-- Ce que la lampe ne peut pas rapporter n'est pas comparé :
-  `color_temp_kelvin` sur une lampe sans mode `color_temp` (Home Assistant
-  l'émule en couleur), les couleurs sur une lampe sans mode couleur, la
-  luminosité sur une lampe uniquement on/off.
+- Ce que la lampe ne sait pas faire n'est pas comparé : les couleurs sur
+  une lampe sans mode couleur, la luminosité sur une lampe uniquement
+  on/off. Une température de couleur sur une lampe sans mode `color_temp`
+  est émulée en couleur par Home Assistant, et comparée comme cette
+  couleur.
+- **Les couleurs sont comparées en chromaticité**, `xy_color`, quelle que
+  soit la forme utilisée par l'appel (`rgb_color`, `hs_color`, `xy_color`,
+  `color_name`, `rgbw_color`, `rgbww_color`) et quel que soit celui de ces
+  attributs que liste la règle. Une ampoule qui n'est pas pilotée en RGB ne
+  renvoie jamais le `rgb_color` demandé : elle stocke du xy ou une
+  teinte/saturation, ramène la couleur dans son gamut, et Home Assistant
+  recalcule `rgb_color` à partir de là, à pleine intensité — un rouge pur
+  sur une ampoule Hue revient en `[255, 43, 0]`. Le point attendu est
+  calculé comme Home Assistant convertit la demande pour cette lampe. Seule
+  une lampe qui fonctionne en RGB est comparée sur `rgb_color`.
+- Un `flash` fait clignoter la lampe et la laisse comme elle était : rien
+  n'est vérifié.
+- Baisser avec un `brightness_step` / `brightness_step_pct` négatif peut
+  finir à zéro, ce qui éteint la lampe : `on` et `off` sont tous deux
+  acceptés.
 - Une `transition` dans l'appel s'ajoute au `check_delay`, et à chaque
   délai de relance : une lampe encore en fondu n'est pas un échec, et la
   relancer ne ferait que recommencer le fondu.
@@ -399,14 +423,17 @@ une lampe éteinte n'a pas de luminosité à comparer.
 
 - Nombres : correspondance si `|attendu − réel| ≤ tolérance` (tolérance
   `0` si rien n'est configuré).
-- Listes/tuples (`rgb_color`, `xy_color`...) : comparés élément par
+- Listes/tuples (`rgb_color`, `hs_color`...) : comparés élément par
   élément avec la même tolérance ; deux longueurs différentes ne
   correspondent jamais.
-- `rgb_color` est comparé comme une teinte : les deux côtés sont d'abord
-  mis à l'échelle pour que leur canal le plus fort vaille 255. Les lampes
-  pilotées en hs ou xy rapportent leur couleur à pleine intensité — la
-  luminosité est un attribut à part — donc `[200, 0, 0]` revient en
-  `[255, 0, 0]`, ce qui n'est pas un échec.
+- `xy_color` est comparé par distance, et jamais plus strictement qu'à
+  **0,06** : une ampoule ramène une couleur hors de son gamut au point le
+  plus proche qu'elle sait afficher — jusqu'à 0,047 pour un vert saturé sur
+  le gamut Zigbee/Hue courant — alors que deux couleurs qu'on dirait
+  différentes sont à 0,09 au moins l'une de l'autre (bleu/violet 0,09,
+  rouge/orange 0,12). Une tolérance configurée plus large l'emporte.
+- `rgb_color` correspond soit tel que rapporté, soit à pleine intensité :
+  les lampes RGB rapportent l'un ou l'autre.
 - Texte, booléens, tout le reste : égalité stricte.
 - Un attribut attendu à `None` est toujours considéré comme satisfait ;
   une entité sans état du tout est toujours en écart.
@@ -430,7 +457,7 @@ dernier résultat connu :
 
 | État | Signification |
 |---|---|
-| `idle` | Aucune vérification n'a encore eu lieu (également l'état juste après un rechargement). |
+| `idle` | Aucune vérification n'a encore eu lieu (également l'état juste après un rechargement), ou la dernière a été annulée par une commande plus récente. |
 | `ok` | Dernière vérification réussie — immédiatement, ou après relance. |
 | `retrying` | Une vérification est en cours et la commande est en train d'être relancée. |
 | `escalated` | La vérification a échoué et l'action d'escalade a été exécutée. |
@@ -635,11 +662,17 @@ télécommande **liée directement** à l'appareil (groupes et liaisons
 Zigbee). Dans ce cas, augmentez `check_delay` pour laisser la situation se
 stabiliser avant la comparaison, ou excluez l'entité de la règle.
 
-Si l'écart n'est pas l'état inverse mais un attribut légèrement décalé —
-une couleur, une température de couleur — élargissez la tolérance de cet
-attribut, ou retirez-le des *Attributs à vérifier* : ce qu'une ampoule
-rapporte est sa propre interprétation de la demande, et certaines
-arrondissent plus que d'autres.
+Si l'écart montre l'état inverse alors que la lampe a *bien* fini par
+obéir, simplement en retard, c'est qu'elle a répondu après toute la
+fenêtre de vérification — `check_delay + retries × retry_delay`, 6
+secondes par défaut. Les lampes cloud et les réseaux Zigbee chargés peuvent
+prendre plus longtemps : augmentez `check_delay`.
+
+Si l'écart n'est pas l'état inverse mais un attribut légèrement décalé,
+élargissez la tolérance de cet attribut, ou retirez-le des *Attributs à
+vérifier* : ce qu'une ampoule rapporte est sa propre interprétation de la
+demande, et certaines arrondissent plus que d'autres — certaines refusent
+par exemple de descendre sous une luminosité minimale.
 
 ## Limites connues
 

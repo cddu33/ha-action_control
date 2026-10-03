@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.5]
+
+### Fixed
+Lights, checked end to end against Home Assistant's own light component and
+simulated bulbs of every kind (xy, hs, RGB, RGBW, RGBWW, white-only, dimmer,
+on/off, and a light group):
+- **Colors are compared as a chromaticity** (`xy_color`), computed the way
+  Home Assistant converts the request for that light, within a distance of at
+  least 0.06. Comparing `rgb_color` failed for nearly every color sent to a
+  Hue or Zigbee bulb: those store xy, clip it to their gamut, and Home
+  Assistant recomputes `rgb_color` from that — pure red came back as
+  `[255, 43, 0]`. Only lights that work in RGB are still compared on
+  `rgb_color`, raw or at full intensity.
+- A **toggle is retried as `turn_on`/`turn_off`** (`open_cover`/`close_cover`
+  for covers). Retried as a toggle, it turned off a light that had come on
+  with its brightness reported late.
+- `brightness_step` and `flash` are never replayed by a retry, so a retry no
+  longer dims the light one more step or blinks it again.
+- A `flash` is no longer expected to leave the light on, and dimming down past
+  zero (which Home Assistant turns into "off") is no longer a failure.
+- A color temperature sent to a light with no white channel is checked as the
+  color Home Assistant emulates it with, instead of not at all.
+- A check cancelled by a newer command no longer leaves the rule's sensor on
+  `retrying`: it goes back to `idle`.
+- The 0.6.4 hue comparison could reject a dim RGB color that matched exactly;
+  `rgb_color` now matches either as reported or at full intensity.
+
 ## [0.6.4]
 
 ### Fixed
