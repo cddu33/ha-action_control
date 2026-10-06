@@ -4,6 +4,7 @@ replay.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.components.siren import SirenEntity, SirenEntityFeature
@@ -32,6 +33,7 @@ class SimSiren(SirenEntity):
         self._attr_unique_id = name
         self._attr_is_on = False
         self.received: list[tuple[str, dict[str, Any]]] = []
+        self._revert_handle: asyncio.TimerHandle | None = None
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         self.received.append(("on", kwargs))
@@ -39,11 +41,18 @@ class SimSiren(SirenEntity):
         self.async_write_ha_state()
         duration = kwargs.get("duration")
         if duration:
-            self.hass.loop.call_later(duration, self._auto_off)
+            self._revert_handle = self.hass.loop.call_later(duration, self._auto_off)
 
     def _auto_off(self) -> None:
         self._attr_is_on = False
         self.async_write_ha_state()
+
+    def simulate_auto_revert_now(self) -> None:
+        """Fire the auto-revert immediately instead of waiting out `duration`."""
+        if self._revert_handle is not None:
+            self._revert_handle.cancel()
+            self._revert_handle = None
+        self._auto_off()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         self.received.append(("off", kwargs))
@@ -104,7 +113,7 @@ async def test_turn_on_with_duration_is_never_reported_even_after_auto_revert(ha
     engine, notifications = await _setup(hass, siren, rule)
 
     await _command(hass, siren.entity_id, "turn_on", {"duration": 1})
-    siren._auto_off()  # simulate the hardware reverting on its own
+    siren.simulate_auto_revert_now()  # the hardware reverting on its own
     await hass.async_block_till_done()
 
     assert hass.states.get(siren.entity_id).state == "off"
