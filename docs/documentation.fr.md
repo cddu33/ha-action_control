@@ -49,7 +49,11 @@ correspondant :
      commence réellement à changer. Si ce n'est pas le cas, c'est
      l'échec — la commande est réémise et l'attente repart, jusqu'à
      `retries` fois. `retry_delay` n'est pas utilisé dans ce mode ; au
-     pire : `(retries + 1) × change_timeout`.
+     pire : `(retries + 1) × change_timeout`. Si l'entité n'a jamais
+     rapporté `change_attribute` du tout — un volet ouvrir/fermer sans
+     retour de position, par exemple — rien ne peut jamais « changer », donc
+     la règle retombe automatiquement sur le mode Délais plutôt que
+     d'attendre le délai complet à chaque fois.
 5. **En cas d'échec persistant**, si l'escalade est activée et que son
    délai de recharge est écoulé : exécute l'action de secours configurée,
    arme le délai de recharge, attend `escalation_replay_delay` secondes,
@@ -283,8 +287,8 @@ L'étape qui décide des autres sections à remplir.
 | Attribut à surveiller | L'attribut surveillé par le mode Mouvement (ex. `current_position`). **Mode Mouvement uniquement**, et obligatoire — l'étape ne se valide pas sans lui. | — |
 | Délai d'attente du changement | Secondes à attendre avant de considérer que le changement a échoué. **Mode Mouvement uniquement.** | 45 (1–600) |
 
-Quand une règle vise exactement un des domaines `light`, `switch` ou
-`cover`, des valeurs par défaut adaptées sont préremplies
+Quand une règle vise exactement un domaine disposant d'un préréglage
+intégré, des valeurs par défaut adaptées sont préremplies
 automatiquement :
 
 | Domaine | Valeurs préremplies |
@@ -292,6 +296,9 @@ automatiquement :
 | `light` | Attributs `brightness`, `rgb_color`, `color_temp_kelvin`, `xy_color`, avec les tolérances `5`, `5`, `100`, `0.01`. |
 | `switch` | État seul, aucun attribut. |
 | `cover` | Mode Mouvement sur `current_position`, délai de 45 s. |
+| `fan` | Attribut `percentage`, tolérance `5`. |
+| `humidifier` | Attribut `humidity`, tolérance `5`. |
+| `vacuum`, `media_player`, `siren` | État seul, aucun attribut — leur état attendu vient déjà du service appelé (voir le tableau ci-dessous). |
 
 Tout autre domaine — ou une règle visant plusieurs domaines à la fois —
 part d'une simple vérification d'état, à affiner avec les champs
@@ -362,14 +369,51 @@ entité.
 | `cover.close_cover`, `valve.close_valve` | `closed` ou `closing` |
 | `cover.toggle`, `valve.toggle` | `closed`/`closing` s'il était ouvert, `open`/`opening` sinon |
 | `lock.lock` / `lock.unlock` / `lock.open` | `locked`/`locking`, `unlocked`/`unlocking`, `open`/`opening`/`unlocked` |
+| `vacuum.start` / `clean_spot` | `cleaning` |
+| `vacuum.pause` | `paused` |
+| `vacuum.stop` | `idle` |
+| `vacuum.return_to_base` | `returning` ou `docked` |
+| `media_player.turn_on` | `on`, `idle`, `playing`, `paused` ou `buffering` (volontairement permissif : un lecteur peut passer directement de « en train de s'allumer » à n'importe lequel de ces états) |
+| `media_player.turn_off` | `off` |
+| `media_player.media_play` | `playing` ou `buffering` |
+| `media_player.media_pause` | `paused` |
+| `media_player.media_stop` | `idle` |
+| `climate.set_temperature` / `set_humidity`, `humidifier.set_humidity` hors de la plage de l'entité | aucun — voir plus bas |
+| `siren.turn_on` avec `duration` | aucun — voir plus bas |
 | tout autre service | aucun — seuls les attributs sont comparés |
 
 Les domaines on/off sont `light`, `switch`, `fan`, `siren`, `input_boolean`,
 `humidifier`, `remote` et `automation`. Tout le reste — `climate`,
-`media_player`, `water_heater`... — n'a aucun état attendu pour
+`media_player`, `water_heater`... — n'a aucun état attendu pour un simple
 `turn_on`/`toggle`, parce que « on » n'est pas ce que ces entités
-rapportent. Les états transitoires (`opening`, `closing`, `locking`...) sont
-acceptés : c'est le mode Mouvement qui surveille le déplacement lui-même.
+rapportent ; les services listés ci-dessus sont modélisés individuellement.
+Les états transitoires (`opening`, `closing`, `locking`...) sont acceptés :
+c'est le mode Mouvement qui surveille le déplacement lui-même.
+`media_player.media_play_pause` et l'état cible exact de `vacuum.stop` ne
+sont pas définis par le cœur de Home Assistant lui-même, donc ils restent
+respectivement non modélisé/au mieux — voir [Limites
+connues](#limites-connues).
+
+**Climate, humidifier : une valeur hors de la plage de l'entité est
+rejetée, pas clampée.** À la différence d'une température de couleur de
+lampe (que le pilote de l'ampoule ramène silencieusement dans ce qu'elle
+peut afficher), les composants `climate`/`humidifier` de Home Assistant
+valident `set_temperature`/`set_humidity` contre les `min_temp`/`max_temp`/
+`min_humidity`/`max_humidity` de l'entité **avant** que celle-ci ne voie
+l'appel — hors de cette plage, rien ne change du tout. Un tel appel est
+intégralement exclu de la vérification (aucun état attendu, aucun
+attribut, donc il se résout immédiatement sans relance), de la même façon
+qu'un `flash` de lampe. La comparaison qui décide si une valeur est dans la
+plage ne convertit pas les unités : une entité qui rapporte sa plage dans
+une autre unité que celle de `hass.config` peut être comparée à la mauvaise
+borne.
+
+**Sirènes : une `duration` n'est jamais vérifiée.** `siren.turn_on` avec
+une `duration` fait que la sirène s'éteint elle-même une fois ce délai
+écoulé — structurellement la même chose qu'un `flash` de lampe. Un appel
+avec `duration` est intégralement exclu de la vérification, ce qui
+signifie aussi qu'il n'est jamais rejoué : un `turn_on` relancé réarmerait
+sinon la sirène.
 
 **Attributs attendus.** Un attribut listé dans *Attributs à vérifier*
 n'est comparé que s'il était réellement présent dans l'appel de service :
@@ -381,8 +425,12 @@ données de service dont le nom diffère de celui de l'attribut d'état :
   `current_position`
 - `cover.set_cover_tilt_position` : `tilt_position` → `current_tilt_position`
 - `light.turn_on` : `brightness_pct` → `brightness` (converti en 0–255) et
-  `kelvin` → `color_temp_kelvin` ; un `brightness` explicite dans l'appel
-  reste prioritaire
+  `kelvin` ou le `color_temp` historique (mireds) → `color_temp_kelvin` ;
+  un `brightness`/`color_temp_kelvin` explicite dans l'appel reste
+  prioritaire sur les autres. La clé historique `color_temp` ne compte que
+  sur un cœur Home Assistant assez ancien pour encore l'accepter (elle a
+  été retirée du schéma de `light.turn_on` en 2026.1) — sur un cœur récent,
+  ce mapping n'est simplement jamais atteint.
 
 Pour les lampes, l'attendu suit ce que Home Assistant fait réellement de
 l'appel plutôt que ses données brutes :
@@ -408,13 +456,20 @@ l'appel plutôt que ses données brutes :
   calculé comme Home Assistant convertit la demande pour cette lampe. Seule
   une lampe qui fonctionne en RGB est comparée sur `rgb_color`.
 - Un `flash` fait clignoter la lampe et la laisse comme elle était : rien
-  n'est vérifié.
+  n'est vérifié. Un `effect` est pareil : il peut changer la luminosité et
+  la couleur comme il veut, donc rien n'est vérifié non plus.
 - Baisser avec un `brightness_step` / `brightness_step_pct` négatif peut
   finir à zéro, ce qui éteint la lampe : `on` et `off` sont tous deux
   acceptés.
 - Une `transition` dans l'appel s'ajoute au `check_delay`, et à chaque
   délai de relance : une lampe encore en fondu n'est pas un échec, et la
   relancer ne ferait que recommencer le fondu.
+- **La couleur propre d'un groupe de lampes n'est jamais comparée.** La
+  couleur/température de couleur d'un groupe est une moyenne sur les
+  membres allumés qui la rapportent, avec le mode couleur du groupe
+  lui-même choisi par vote majoritaire entre eux — ni l'une ni l'autre
+  n'est prévisible à partir du calcul d'une seule ampoule. L'état et la
+  luminosité (transmis tels quels à chaque membre) ne sont pas affectés.
 
 Quel que soit le domaine, un appel qui **éteint** n'attend aucun attribut :
 une lampe éteinte n'a pas de luminosité à comparer.
@@ -550,7 +605,44 @@ l'attribut `current_position`.
 - Délai avant la première vérification : 5 s
 
 Détecte les consignes silencieusement perdues par une liaison radio
-capricieuse.
+capricieuse. Une consigne hors des `min_temp`/`max_temp` propres au
+thermostat est exclue de la vérification plutôt que de la faire échouer —
+Home Assistant la rejette avant même que l'entité ne la voie, donc aucune
+relance ne pourrait y changer quoi que ce soit.
+
+### Consigne d'humidificateur
+
+- Domaines : `humidifier`
+- Services : `set_humidity`
+- Attributs à vérifier : `humidity`
+- Tolérances : `humidity:5`
+- Délai avant la première vérification : 5 s
+
+Même principe que la recette du thermostat : un `set_humidity` hors des
+`min_humidity`/`max_humidity` propres à l'entité est exclu plutôt que de
+faire échouer la règle.
+
+### Surveillance d'aspirateur
+
+- Domaines : `vacuum`
+- Services : `start`, `return_to_base` (ou vide pour tous)
+- Relances : 2, délai 5 s
+
+Vérifie que `start` atteint bien `cleaning` et que `return_to_base` atteint
+`returning`/`docked`, pour détecter un robot qui reste silencieusement sur
+place.
+
+### Surveillance de vitesse de ventilateur
+
+- Domaines : `fan`
+- Services : `set_percentage`
+- Attributs à vérifier : `percentage` (prérempli par défaut)
+- Tolérances : `percentage:5`
+
+Vérifie que la vitesse demandée a bien été appliquée. `increase_speed`/
+`decrease_speed` sont relatifs (aucun pourcentage absolu dans l'appel) et
+ne sont jamais vérifiés, volontairement — il n'y a rien dont ils puissent
+avoir tort.
 
 ### Activation de scène
 
@@ -693,3 +785,14 @@ par exemple de descendre sous une luminosité minimale.
   [Quand une règle signale un échec qui n'en est pas un](#quand-une-règle-signale-un-échec-qui-nen-est-pas-un).
 - **Le rejeu après escalade n'est pas vérifié** ; c'est la dernière action
   de la séquence.
+- **L'état attendu de `vacuum.stop` (`idle`) est une estimation au mieux** :
+  le cœur de Home Assistant n'impose pas ce qu'un aspirateur rapporte après
+  `stop`, donc une intégration qui atterrit ailleurs sera lue comme un
+  échec. `media_player.media_play_pause` n'est volontairement pas modélisé
+  du tout, pour la même raison : il n'y a pas de « bonne » réponse unique à
+  vérifier.
+- **La vérification de plage climate/humidifier ne convertit pas les
+  unités.** Une consigne est comparée aux `min_temp`/`max_temp`/
+  `min_humidity`/`max_humidity` propres à l'entité tels que rapportés, sans
+  reproduire la conversion d'unité de Home Assistant pour une entité
+  utilisant une unité différente de celle de `hass.config`.

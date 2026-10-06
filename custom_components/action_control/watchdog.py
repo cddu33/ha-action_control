@@ -63,6 +63,17 @@ def _compute_retry_delay(base_delay: float, backoff: str, attempt: int) -> float
     return min(delay, MAX_RETRY_DELAY)
 
 
+def _attribute_is_tracked(state: State | None, attribute: str) -> bool:
+    """Whether an entity has ever reported `attribute` at all.
+
+    Home Assistant entities only add an attribute key when there is a real
+    value to report: a cover with no position feedback never has
+    current_position in its attributes, not even as None. Waiting for it to
+    "change" from an always-absent value can never succeed.
+    """
+    return state is not None and attribute in state.attributes
+
+
 async def _wait_for_attribute_change(
     hass: HomeAssistant, entity_id: str, attribute: str, baseline: Any, timeout: float
 ) -> bool:
@@ -351,7 +362,19 @@ async def async_run_watchdog(
 
         moved = True
         no_movement_mismatch = None
-        if rule.wait_for_change and rule.change_attribute:
+        movement_mode = (
+            rule.wait_for_change
+            and rule.change_attribute
+            and _attribute_is_tracked(hass.states.get(entity_id), rule.change_attribute)
+        )
+        if rule.wait_for_change and rule.change_attribute and not movement_mode:
+            _LOGGER.debug(
+                "Rule '%s': %s never reports %s, falling back to a state-based check",
+                rule.name,
+                entity_id,
+                rule.change_attribute,
+            )
+        if movement_mode:
             baseline = None
             state = hass.states.get(entity_id)
             if state is not None:

@@ -7,6 +7,7 @@ not a single value, so transitional states like "opening" still pass.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from homeassistant.core import State
@@ -61,6 +62,51 @@ def expected_states_for(
     return None
 
 
+# (domain, service) -> (service-data keys holding the requested value, the
+# state attributes holding the entity's own minimum and maximum).
+_OUT_OF_RANGE_EXCLUSIONS: dict[tuple[str, str], tuple[tuple[str, ...], str, str]] = {
+    ("climate", "set_temperature"): (
+        ("temperature", "target_temp_low", "target_temp_high"),
+        "min_temp",
+        "max_temp",
+    ),
+    ("climate", "set_humidity"): (("humidity",), "min_humidity", "max_humidity"),
+    ("humidifier", "set_humidity"): (("humidity",), "min_humidity", "max_humidity"),
+}
+
+
+def _rejected_by_range(
+    service_data: dict[str, Any],
+    current_state: State | None,
+    value_keys: tuple[str, ...],
+    min_attr: str,
+    max_attr: str,
+) -> bool:
+    """Whether Home Assistant's own entity-service layer will reject this call.
+
+    climate.set_temperature/set_humidity and humidifier.set_humidity are
+    validated against the entity's own min/max *before* the entity ever sees
+    the call: outside that range, Home Assistant raises
+    ServiceValidationError and nothing changes. Expecting the raw requested
+    value is a failure every time, and retrying only repeats the rejection.
+    """
+    attributes = current_state.attributes if current_state is not None else {}
+    low = attributes.get(min_attr)
+    high = attributes.get(max_attr)
+    for key in value_keys:
+        if key not in service_data:
+            continue
+        try:
+            value = float(service_data[key])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(low, (int, float)) and value < low:
+            return True
+        if isinstance(high, (int, float)) and value > high:
+            return True
+    return False
+
+
 def compute_expected(
     domain: str,
     service: str,
@@ -69,6 +115,10 @@ def compute_expected(
     current_state: State | None,
 ) -> tuple[frozenset[str] | None, dict[str, Any]]:
     """Derive the expected state(s) and attributes for a just-issued call."""
+    exclusion = _OUT_OF_RANGE_EXCLUSIONS.get((domain, service))
+    if exclusion and _rejected_by_range(service_data, current_state, *exclusion):
+        return None, {}
+
     expected_state = expected_states_for(domain, service, current_state)
 
     sources = SERVICE_DATA_ATTRIBUTE_SOURCES.get((domain, service), {})
@@ -80,8 +130,9 @@ def compute_expected(
                 expected_attributes[attr] = convert(value) if convert else value
                 break
 
-    if domain == "light" and expected_state == frozenset({"on"}):
-        expected_state, expected_attributes = _adjust_light_on(
+    adjuster = _ON_STATE_ADJUSTERS.get(domain)
+    if adjuster is not None and expected_state == frozenset({"on"}):
+        expected_state, expected_attributes = adjuster(
             service_data, attributes_to_check, expected_attributes, current_state
         )
     # A light, switch or fan that is off has no brightness or color to
@@ -117,8 +168,9 @@ def _adjust_light_on(
     reports no color_temp_kelvin at all. Expecting the raw service data in
     those cases is a failure every single time.
     """
-    if "flash" in service_data:
-        # A flash blinks the light and leaves it as it was: nothing to verify.
+    if "flash" in service_data or "effect" in service_data:
+        # A flash blinks the light and leaves it as it was; an effect can
+        # change brightness and color however it likes: nothing to verify.
         return None, {}
 
     for key in ("brightness", "brightness_pct"):
@@ -144,6 +196,19 @@ def _adjust_light_on(
     expected = dict(expected_attributes)
     if modes <= {"onoff"}:
         expected.pop("brightness", None)
+
+    if "entity_id" in attributes:
+        # A light group: its color/color-temp is a mean across whichever
+        # "on" members happen to report it, with the color mode itself
+        # picked by a majority vote among them -- neither is predictable
+        # from a single member's math, so a mixed group's color is never
+        # verified. State and brightness (forwarded and reported as-is by
+        # every member) are unaffected.
+        expected.pop("color_temp_kelvin", None)
+        for attr in _LIGHT_COLOR_ATTRIBUTES:
+            expected.pop(attr, None)
+        return expected_state, expected
+
     if "color_temp" not in modes:
         expected.pop("color_temp_kelvin", None)
     elif isinstance(expected.get("color_temp_kelvin"), (int, float)):
@@ -172,6 +237,33 @@ def _adjust_light_on(
         # color instead, and the light reports it as a color.
         expected.update(_emulated_color_temp(expected_attributes["color_temp_kelvin"]))
     return expected_state, expected
+
+
+def _adjust_siren_on(
+    service_data: dict[str, Any],
+    attributes_to_check: list[str],
+    expected_attributes: dict[str, Any],
+    current_state: State | None,
+) -> tuple[frozenset[str] | None, dict[str, Any]]:
+    """A siren with a `duration` auto-reverts off on its own: nothing to verify."""
+    if "duration" in service_data:
+        return None, {}
+    return frozenset({"on"}), expected_attributes
+
+
+# Per-domain adjustment of the "on" state Home Assistant will really end up
+# in, keyed by domain and triggered once expected_states_for() has already
+# resolved to "on" -- a toggle that turns something on goes through here too.
+_ON_STATE_ADJUSTERS: dict[
+    str,
+    Callable[
+        [dict[str, Any], list[str], dict[str, Any], State | None],
+        tuple[frozenset[str] | None, dict[str, Any]],
+    ],
+] = {
+    "light": _adjust_light_on,
+    "siren": _adjust_siren_on,
+}
 
 
 def _emulated_color_temp(kelvin: Any) -> dict[str, Any]:

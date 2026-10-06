@@ -179,7 +179,10 @@ COMMANDS: list[tuple[str, dict[str, Any]]] = [
     ("turn_on", {"hs_color": [240, 100]}),
     ("turn_on", {"hs_color": [30, 40], "brightness_pct": 60}),
     ("turn_on", {"color_name": "orange"}),
+    ("turn_on", {"rgbw_color": [255, 128, 0, 10]}),
+    ("turn_on", {"rgbww_color": [255, 128, 0, 10, 200]}),
     ("turn_on", {"flash": "short"}),
+    ("turn_on", {"effect": "rainbow"}),
     ("turn_on", {"brightness_step_pct": 10}),
     ("turn_on", {"brightness_step_pct": -10}),
     ("turn_on", {"brightness_step_pct": -100}),
@@ -207,9 +210,18 @@ def _light_rule(**overrides: Any) -> Rule:
     return Rule(**fields)
 
 
-async def _setup(hass: HomeAssistant, bulbs: list[SimLight], rule: Rule):
+async def _setup(
+    hass: HomeAssistant,
+    bulbs: list[SimLight],
+    rule: Rule,
+    *,
+    extra_light_platforms: list[dict[str, Any]] | None = None,
+):
     setup_test_component_platform(hass, "light", bulbs)
-    assert await async_setup_component(hass, "light", {"light": {"platform": "test"}})
+    platforms: list[dict[str, Any]] = [{"platform": "test"}]
+    if extra_light_platforms:
+        platforms.extend(extra_light_platforms)
+    assert await async_setup_component(hass, "light", {"light": platforms})
     entry = make_entry(rule)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -242,6 +254,47 @@ async def test_a_bulb_that_obeys_is_never_reported(hass):
         status = engine.rule_status.get(rule.rule_id)
         if status is not None and status.status is not RuleStatus.OK:
             false_failures.append((bulb.entity_id, start, service, data, status.mismatches))
+
+    assert false_failures == []
+
+
+_GROUP_COMMANDS: list[tuple[str, dict[str, Any]]] = [
+    ("turn_on", {}),
+    ("turn_on", {"brightness": 150}),
+    ("turn_on", {"rgb_color": [0, 0, 255]}),
+    ("turn_on", {"color_temp_kelvin": 4000}),
+    ("turn_off", {}),
+]
+
+
+async def test_a_mixed_light_group_is_never_falsely_reported(hass):
+    """A group of unlike bulbs (RGB, color-temp-only, on/off) must not
+    produce a false failure -- the group aggregates its members' attributes
+    (mean of the "on" ones) and picks its own color mode by majority, which
+    does not always land where a single bulb's math would predict."""
+    bulbs = _bulbs()
+    rule = _light_rule(entity_id_pattern="light.mixed_group")
+    engine, _ = await _setup(
+        hass,
+        bulbs,
+        rule,
+        extra_light_platforms=[
+            {
+                "platform": "group",
+                "name": "Mixed Group",
+                "entities": ["light.rgb_raw", "light.ct_only", "light.onoff"],
+            }
+        ],
+    )
+
+    false_failures = []
+    for start, (service, data) in itertools.product(("off", "on"), _GROUP_COMMANDS):
+        await _command(hass, "light.mixed_group", f"turn_{start}", {})
+        engine.rule_status.clear()
+        await _command(hass, "light.mixed_group", service, data)
+        status = engine.rule_status.get(rule.rule_id)
+        if status is not None and status.status is not RuleStatus.OK:
+            false_failures.append((start, service, data, status.mismatches))
 
     assert false_failures == []
 
