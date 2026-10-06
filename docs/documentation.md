@@ -47,7 +47,11 @@ integration). For each rule you have configured, on a matching call it:
      changing. If it doesn't, that is the failure — the command is
      re-issued and the wait starts over, up to `retries` times.
      `retry_delay` is not used in this mode; worst case:
-     `(retries + 1) × change_timeout`.
+     `(retries + 1) × change_timeout`. If the entity has never reported
+     `change_attribute` at all — a plain open/close cover with no position
+     feedback, for instance — there is nothing that could ever "change", so
+     the rule falls back to Delay mode automatically instead of waiting out
+     the full timeout every single time.
 5. **On persistent failure**, if escalation is enabled and its cooldown
    has elapsed: runs the configured recovery action, arms the cooldown,
    waits `escalation_replay_delay` seconds, then replays the original
@@ -270,14 +274,17 @@ The step that decides which of the other sections you'll be asked to fill in.
 | Attribute to watch | The attribute movement mode watches (e.g. `current_position`). **Movement mode only**, and required — the step won't move on without it. | — |
 | Timeout waiting for the change | Seconds to wait for that attribute to change before considering it a failure. **Movement mode only.** | 45 (1–600) |
 
-When a rule targets exactly one of the `light`, `switch` or `cover`
-domains, sensible defaults are pre-filled automatically:
+When a rule targets exactly one domain with a built-in preset, sensible
+defaults are pre-filled automatically:
 
 | Domain | Pre-filled defaults |
 |---|---|
 | `light` | Attributes `brightness`, `rgb_color`, `color_temp_kelvin`, `xy_color`, with tolerances `5`, `5`, `100`, `0.01`. |
 | `switch` | State only, no attribute. |
 | `cover` | Movement mode on `current_position`, 45 s timeout. |
+| `fan` | Attribute `percentage`, tolerance `5`. |
+| `humidifier` | Attribute `humidity`, tolerance `5`. |
+| `vacuum`, `media_player`, `siren` | State only, no attribute — their expected state already comes from the service called (see the table below). |
 
 Any other domain — or a rule targeting several domains at once — starts
 from a plain state-only check that you can refine with the fields above.
@@ -343,14 +350,47 @@ next status update comes from the next command on that entity.
 | `cover.close_cover`, `valve.close_valve` | `closed` or `closing` |
 | `cover.toggle`, `valve.toggle` | `closed`/`closing` if it was open, `open`/`opening` otherwise |
 | `lock.lock` / `lock.unlock` / `lock.open` | `locked`/`locking`, `unlocked`/`unlocking`, `open`/`opening`/`unlocked` |
+| `vacuum.start` / `clean_spot` | `cleaning` |
+| `vacuum.pause` | `paused` |
+| `vacuum.stop` | `idle` |
+| `vacuum.return_to_base` | `returning` or `docked` |
+| `media_player.turn_on` | `on`, `idle`, `playing`, `paused` or `buffering` (deliberately permissive: a player can skip straight from "turning on" to any of these) |
+| `media_player.turn_off` | `off` |
+| `media_player.media_play` | `playing` or `buffering` |
+| `media_player.media_pause` | `paused` |
+| `media_player.media_stop` | `idle` |
+| `climate.set_temperature` / `set_humidity`, `humidifier.set_humidity` outside the entity's own range | none — see below |
+| `siren.turn_on` with a `duration` | none — see below |
 | any other service | none — only the attributes are compared |
 
 The on/off domains are `light`, `switch`, `fan`, `siren`, `input_boolean`,
 `humidifier`, `remote` and `automation`. Anything else — `climate`,
-`media_player`, `water_heater`, ... — gets no expected state from
-`turn_on`/`toggle`, because "on" is not what those entities report. States
+`media_player`, `water_heater`, ... — gets no expected state from a bare
+`turn_on`/`toggle`, because "on" is not what those entities report; the
+specific services listed above are modeled individually instead. States
 that mean "on its way" (`opening`, `closing`, `locking`, ...) are accepted:
-that is what movement mode is for.
+that is what movement mode is for. `media_player.media_play_pause` and
+`vacuum.stop`'s exact target state aren't defined by Home Assistant's core
+itself, so they're left unmodeled/best-effort respectively — see [Known
+limitations](#known-limitations).
+
+**Climate, humidifier: a value outside the entity's own range is rejected,
+not clamped.** Unlike a light's color temperature (which the bulb's own
+driver silently clips to what it can show), Home Assistant's `climate`/
+`humidifier` components validate `set_temperature`/`set_humidity` against
+the entity's `min_temp`/`max_temp`/`min_humidity`/`max_humidity` **before**
+the entity ever sees the call — outside that range, nothing changes at all.
+Such a call is excluded from verification entirely (no expected state, no
+attributes, so it resolves immediately with no retry), the same way a
+light's `flash` is. The comparison that decides whether a value is in range
+does not convert units, so an entity reporting its range in a unit other
+than the one `hass.config` uses can be compared against the wrong bound.
+
+**Sirens: a `duration` is never verified.** `siren.turn_on` with a
+`duration` makes the siren turn itself back off once that time elapses —
+structurally the same as a light's `flash`. A `duration` call is excluded
+from verification entirely, which also means it is never replayed: a
+retried `turn_on` would otherwise re-arm the siren.
 
 **Expected attributes.** An attribute listed in *Attributes to check* is
 only compared if the service call actually carried it: `light.turn_on`
@@ -362,7 +402,12 @@ state attribute name:
   `current_position`
 - `cover.set_cover_tilt_position`: `tilt_position` → `current_tilt_position`
 - `light.turn_on`: `brightness_pct` → `brightness` (converted to 0–255) and
-  `kelvin` → `color_temp_kelvin`; an explicit `brightness` in the call wins
+  `kelvin` or the legacy mireds `color_temp` → `color_temp_kelvin`; an
+  explicit `brightness`/`color_temp_kelvin` in the call wins over the
+  others. The legacy `color_temp` key only matters on a Home Assistant core
+  old enough to still accept it (it was removed from `light.turn_on`'s
+  schema in 2026.1) — on a current core the mapping is simply never
+  reached.
 
 For lights, the expectation follows what Home Assistant actually does with
 the call rather than its raw data:
@@ -385,12 +430,19 @@ the call rather than its raw data:
   Home Assistant converts the request for that light. Only a light that
   works in RGB is compared on `rgb_color`.
 - A `flash` blinks the light and leaves it as it was: nothing is checked.
+  An `effect` is the same: it can change brightness and color however it
+  likes, so nothing is checked either.
 - Dimming down with a negative `brightness_step` / `brightness_step_pct`
   may end at zero, which turns the light off: both `on` and `off` are
   accepted.
 - A `transition` in the call is added to `check_delay`, and to each retry
   delay: a light still fading is not a failure, and retrying would only
   restart the fade.
+- **A light group's own color is never compared.** A group's color/color
+  temperature is a mean across whichever members happen to be on and
+  report it, with the group's own color mode picked by a majority vote
+  among them — neither is predictable from a single bulb's math. State and
+  brightness (forwarded to every member as-is) are unaffected.
 
 Whatever the domain, a call that turns something **off** expects no
 attributes: a light that is off has no brightness to compare.
@@ -518,7 +570,41 @@ Verifies that a cover reached the position that was requested, ±2 %. The
 - Tolerances: `temperature:0.2`
 - Delay before the first check: 5 s
 
-Catches setpoints silently dropped by a flaky radio link.
+Catches setpoints silently dropped by a flaky radio link. A setpoint
+outside the thermostat's own `min_temp`/`max_temp` is excluded from
+verification rather than failing — Home Assistant rejects it before the
+entity ever sees it, so there is nothing a retry could fix.
+
+### Humidifier setpoint
+
+- Domains: `humidifier`
+- Services: `set_humidity`
+- Attributes to check: `humidity`
+- Tolerances: `humidity:5`
+- Delay before the first check: 5 s
+
+Same idea as the thermostat recipe: a `set_humidity` outside the entity's
+own `min_humidity`/`max_humidity` is excluded rather than failing.
+
+### Vacuum watchdog
+
+- Domains: `vacuum`
+- Services: `start`, `return_to_base` (or leave empty for all)
+- Retries: 2, delay 5 s
+
+Verifies that `start` actually reaches `cleaning` and `return_to_base`
+reaches `returning`/`docked`, catching a robot that silently stays put.
+
+### Fan speed watchdog
+
+- Domains: `fan`
+- Services: `set_percentage`
+- Attributes to check: `percentage` (pre-filled by default)
+- Tolerances: `percentage:5`
+
+Verifies the requested speed was actually applied. `increase_speed`/
+`decrease_speed` are relative (no absolute percentage in the call) and are
+never verified, by design — there is nothing for them to be wrong about.
 
 ### Scene activation
 
@@ -652,3 +738,13 @@ for instance.
   one](#when-a-rule-reports-a-failure-that-isnt-one).
 - **The post-escalation replay is not verified**; it is the last action of
   the run.
+- **`vacuum.stop`'s expected state (`idle`) is a best-effort guess**: Home
+  Assistant's core does not mandate what a vacuum reports after `stop`, so
+  an integration that lands elsewhere will read as a failure.
+  `media_player.media_play_pause` is left entirely unmodeled for the same
+  reason — there's no single "right" answer to validate against.
+- **Climate/humidifier range checking does not convert units.** A setpoint
+  is compared against the entity's own `min_temp`/`max_temp`/
+  `min_humidity`/`max_humidity` as reported, without replicating Home
+  Assistant's unit conversion for an entity using a different unit than
+  `hass.config`.

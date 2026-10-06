@@ -195,3 +195,161 @@ def test_rgb_color_is_compared_as_a_hue_not_as_raw_values():
     assert not comparator.compare(
         "on", {"rgb_color": [200, 0, 0]}, {"rgb_color": 5}, _light(rgb_color=(0, 0, 255))
     ).ok
+
+
+def test_compute_expected_maps_legacy_mireds_color_temp():
+    # color_temp (mireds) was accepted by light.turn_on until HA 2026.1;
+    # installs on an older core still send it.
+    _, expected_attrs = comparator.compute_expected(
+        "light", "turn_on", {"color_temp": 370}, ["color_temp_kelvin"], None
+    )
+    assert expected_attrs == {"color_temp_kelvin": round(1e6 / 370)}
+
+
+def test_compute_expected_mireds_loses_to_color_temp_kelvin_when_both_are_sent():
+    _, expected_attrs = comparator.compute_expected(
+        "light",
+        "turn_on",
+        {"color_temp_kelvin": 2700, "color_temp": 370},
+        ["color_temp_kelvin"],
+        None,
+    )
+    assert expected_attrs == {"color_temp_kelvin": 2700}
+
+
+def test_a_light_group_s_color_is_never_verified():
+    # A group's color is a mean across whichever "on" members happen to
+    # report it, with the color mode itself picked by majority vote: neither
+    # is predictable from a single member's math.
+    group = _light(
+        supported_color_modes=["rgb", "color_temp"],
+        entity_id=["light.a", "light.b"],
+    )
+    _, expected_attrs = comparator.compute_expected(
+        "light",
+        "turn_on",
+        {"rgb_color": [0, 0, 255], "color_temp_kelvin": 4000, "brightness": 150},
+        ["rgb_color", "xy_color", "color_temp_kelvin", "brightness"],
+        group,
+    )
+    assert expected_attrs == {"brightness": 150}
+
+
+# ---- climate/humidifier: Home Assistant rejects an out-of-range request ----
+
+
+def _climate(state: str = "heat", **attrs) -> State:
+    return State("climate.test", state, attrs)
+
+
+def test_compute_expected_excludes_an_out_of_range_set_temperature():
+    climate = _climate(min_temp=7, max_temp=35)
+    for temperature in (5, 40):
+        expected_state, expected_attrs = comparator.compute_expected(
+            "climate", "set_temperature", {"temperature": temperature}, ["temperature"], climate
+        )
+        assert expected_state is None
+        assert expected_attrs == {}
+
+
+def test_compute_expected_keeps_an_in_range_set_temperature():
+    climate = _climate(min_temp=7, max_temp=35)
+    expected_state, expected_attrs = comparator.compute_expected(
+        "climate", "set_temperature", {"temperature": 21}, ["temperature"], climate
+    )
+    assert expected_state is None
+    assert expected_attrs == {"temperature": 21}
+
+
+def test_compute_expected_excludes_out_of_range_humidifier_humidity():
+    humidifier = State(
+        "humidifier.test", "on", {"min_humidity": 30, "max_humidity": 80}
+    )
+    expected_state, expected_attrs = comparator.compute_expected(
+        "humidifier", "set_humidity", {"humidity": 95}, ["humidity"], humidifier
+    )
+    assert expected_state is None
+    assert expected_attrs == {}
+
+
+def test_compute_expected_range_exclusion_ignored_without_min_max_attributes():
+    climate = _climate()
+    expected_state, expected_attrs = comparator.compute_expected(
+        "climate", "set_temperature", {"temperature": 500}, ["temperature"], climate
+    )
+    assert expected_attrs == {"temperature": 500}
+
+
+# ---- siren: a duration auto-reverts, like a light's flash ----
+
+
+def _siren(state: str = "off", **attrs) -> State:
+    return State("siren.test", state, attrs)
+
+
+def test_compute_expected_siren_duration_is_never_verified():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "siren", "turn_on", {"duration": 5}, [], _siren()
+    )
+    assert expected_state is None
+    assert expected_attrs == {}
+
+
+def test_compute_expected_siren_without_duration_expects_on():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "siren", "turn_on", {"tone": "alarm"}, [], _siren()
+    )
+    assert expected_state == frozenset({"on"})
+
+
+def test_compute_expected_siren_toggle_with_duration_is_never_verified():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "siren", "toggle", {"duration": 5}, [], _siren("off")
+    )
+    assert expected_state is None
+    assert expected_attrs == {}
+
+
+def test_compute_expected_light_turn_on_is_unaffected_by_the_siren_adjuster():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "light", "turn_on", {"brightness": 100}, ["brightness"], None
+    )
+    assert expected_state == frozenset({"on"})
+    assert expected_attrs == {"brightness": 100}
+
+
+def test_compute_expected_light_effect_is_never_verified():
+    expected_state, expected_attrs = comparator.compute_expected(
+        "light", "turn_on", {"effect": "rainbow"}, ["brightness", "rgb_color"], _light()
+    )
+    assert expected_state is None
+    assert expected_attrs == {}
+
+
+# ---- vacuum/media_player: state modeling for the previously-silent domains ----
+
+
+def test_compute_expected_vacuum_services():
+    cases = {
+        "start": "cleaning",
+        "pause": "paused",
+        "stop": "idle",
+        "clean_spot": "cleaning",
+    }
+    for service, state in cases.items():
+        expected_state, _ = comparator.compute_expected("vacuum", service, {}, [], None)
+        assert expected_state == frozenset({state})
+
+    expected_state, _ = comparator.compute_expected("vacuum", "return_to_base", {}, [], None)
+    assert expected_state == frozenset({"returning", "docked"})
+
+
+def test_compute_expected_media_player_services():
+    expected_state, _ = comparator.compute_expected("media_player", "turn_off", {}, [], None)
+    assert expected_state == frozenset({"off"})
+
+    expected_state, _ = comparator.compute_expected("media_player", "turn_on", {}, [], None)
+    assert expected_state == frozenset({"on", "idle", "playing", "paused", "buffering"})
+
+    expected_state, _ = comparator.compute_expected("media_player", "media_pause", {}, [], None)
+    assert expected_state == frozenset({"paused"})

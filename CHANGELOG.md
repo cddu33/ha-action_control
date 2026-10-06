@@ -4,6 +4,63 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.6]
+
+A follow-up audit of 0.6.5: the same false-failure class the light bench
+found is checked, by analogy, across every other domain the integration
+models, and the light bench itself is checked against what its own PR
+description claimed.
+
+### Fixed
+- **A cover/valve with no position feedback no longer times out forever.**
+  Movement mode now falls back to the normal state-based check when the
+  entity has never reported `change_attribute` at all — a plain open/close
+  cover (no `current_position`) used to wait out the full timeout, retry,
+  and report `failed` every single time, even though it opened or closed
+  exactly as asked.
+- **`climate.set_temperature`/`set_humidity` and `humidifier.set_humidity`
+  outside the entity's own range are excluded from verification**, instead
+  of expecting a value Home Assistant itself rejects before the entity ever
+  sees the call (not a clamp like light's color temperature — a straight
+  rejection, so there's nothing a retry could fix).
+- **`siren.turn_on` with a `duration` is never verified or replayed**, the
+  same way a light's `flash` isn't: the siren turns itself back off on its
+  own, and a retried `turn_on` would only re-arm it.
+- **A light `effect` suppresses the whole check**, like `flash` already
+  did: it can change brightness and color however it likes.
+- **A light group's own color is never compared.** Its color/color
+  temperature is a mean across whichever members are on and report it,
+  with the group's own color mode picked by majority vote — neither is
+  predictable from a single bulb's math, and the light bench's own group
+  fixture (claimed in 0.6.5's description, never actually present) caught
+  it immediately once added.
+- **Legacy mireds `color_temp` on `light.turn_on`** is mapped to
+  `color_temp_kelvin` like `kelvin` already was — matters only on a Home
+  Assistant core old enough to still accept it (removed from the service
+  schema in 2026.1).
+- **`rgbw_color`/`rgbww_color` sent directly** are now exercised by the
+  light bench; they were already handled in code but never actually
+  tested.
+
+### Added
+- **`vacuum` and `media_player` now have a modeled expected state**
+  (`start`/`pause`/`stop`/`return_to_base`/`clean_spot`, and
+  `turn_on`/`turn_off`/`media_play`/`media_pause`/`media_stop`), where
+  before every rule on these domains was a silent no-op — it could never
+  detect a real failure. `media_player.turn_on` is deliberately permissive
+  (`on`, `idle`, `playing`, `paused` or `buffering`), since a player can
+  skip straight from "turning on" to any of those.
+- New built-in presets for `vacuum`, `media_player`, `fan`, `humidifier`
+  and `siren`, pre-filling sensible defaults the same way `light`/`switch`/
+  `cover` already did.
+- New recipes: Vacuum watchdog, Fan speed watchdog, Humidifier setpoint.
+
+### Docs
+- EN/FR documentation updated for all of the above, including new "Known
+  limitations" entries for `vacuum.stop`'s best-effort target state,
+  `media_player.media_play_pause` being left unmodeled, and the
+  climate/humidifier range check not converting units.
+
 ## [0.6.5]
 
 ### Fixed

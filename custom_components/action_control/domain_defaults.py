@@ -47,6 +47,31 @@ DOMAIN_PRESETS: dict[str, dict[str, Any]] = {
         "change_attribute": "current_position",
         "change_timeout": 45.0,
     },
+    "vacuum": {
+        "attributes_to_check": [],
+        "tolerances": {},
+        "wait_for_change": False,
+    },
+    "media_player": {
+        "attributes_to_check": [],
+        "tolerances": {},
+        "wait_for_change": False,
+    },
+    "fan": {
+        "attributes_to_check": ["percentage"],
+        "tolerances": {"percentage": 5},
+        "wait_for_change": False,
+    },
+    "humidifier": {
+        "attributes_to_check": ["humidity"],
+        "tolerances": {"humidity": 5},
+        "wait_for_change": False,
+    },
+    "siren": {
+        "attributes_to_check": [],
+        "tolerances": {},
+        "wait_for_change": False,
+    },
 }
 
 # Domains that really are on/off. Anything else needs an explicit entry
@@ -74,6 +99,19 @@ SERVICE_EXPECTED_STATES: dict[tuple[str, str], frozenset[str]] = {
     ("lock", "lock"): frozenset({"locked", "locking"}),
     ("lock", "unlock"): frozenset({"unlocked", "unlocking"}),
     ("lock", "open"): frozenset({"open", "opening", "unlocked"}),
+    ("vacuum", "start"): frozenset({"cleaning"}),
+    ("vacuum", "pause"): frozenset({"paused"}),
+    ("vacuum", "stop"): frozenset({"idle"}),
+    ("vacuum", "return_to_base"): frozenset({"returning", "docked"}),
+    ("vacuum", "clean_spot"): frozenset({"cleaning"}),
+    # Deliberately permissive: a player can go from "turning on" straight to
+    # idle/playing/paused/buffering depending on the integration, and a
+    # strict "on" would make most real players fail every single time.
+    ("media_player", "turn_on"): frozenset({"on", "idle", "playing", "paused", "buffering"}),
+    ("media_player", "turn_off"): frozenset({"off"}),
+    ("media_player", "media_play"): frozenset({"playing", "buffering"}),
+    ("media_player", "media_pause"): frozenset({"paused"}),
+    ("media_player", "media_stop"): frozenset({"idle"}),
 }
 
 # On/off services, only applied to ON_OFF_DOMAINS.
@@ -106,6 +144,18 @@ def _brightness_pct_to_255(value: Any) -> Any:
         return value
 
 
+def _mireds_to_kelvin(value: Any) -> Any:
+    """Convert light.turn_on's legacy `color_temp` (mireds) to kelvin.
+
+    Home Assistant accepted this key until 2026.1; installs on an older core
+    still send it.
+    """
+    try:
+        return round(1e6 / float(value))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return value
+
+
 # Service-data keys an attribute can be read from, when the key isn't the
 # attribute's own name or needs converting. First key present in the call wins.
 SERVICE_DATA_ATTRIBUTE_SOURCES: dict[
@@ -128,6 +178,7 @@ SERVICE_DATA_ATTRIBUTE_SOURCES: dict[
         "color_temp_kelvin": (
             ("color_temp_kelvin", None),
             ("kelvin", None),
+            ("color_temp", _mireds_to_kelvin),
         ),
     },
 }

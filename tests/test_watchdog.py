@@ -128,6 +128,82 @@ async def test_already_satisfied_command_exits_immediately_without_retry(
     assert len(calls) == 1
 
 
+async def test_cover_without_position_feedback_falls_back_to_state_check(hass):
+    """A plain open/close cover that never reports current_position must
+    not time out waiting for an attribute that never changes -- it falls
+    back to the normal open/opening state check instead."""
+    rule = make_cover_rule(retries=0, check_delay=0.01)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("cover.volet_salon", "closed")  # no current_position at all
+
+    async def _open(call: ServiceCall) -> None:
+        hass.states.async_set("cover.volet_salon", "open")
+
+    hass.services.async_register("cover", "open_cover", _open)
+    notifications: list[dict] = []
+    hass.services.async_register(
+        "persistent_notification", "create", lambda call: notifications.append(dict(call.data))
+    )
+
+    await hass.services.async_call(
+        "cover", "open_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert notifications == []
+
+
+async def test_cover_without_position_feedback_still_fails_if_it_never_opens(hass):
+    rule = make_cover_rule(retries=0, check_delay=0.01)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("cover.volet_salon", "closed")  # no current_position at all
+
+    hass.services.async_register("cover", "open_cover", lambda call: None)
+    notifications: list[dict] = []
+    hass.services.async_register(
+        "persistent_notification", "create", lambda call: notifications.append(dict(call.data))
+    )
+
+    await hass.services.async_call(
+        "cover", "open_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert len(notifications) == 1
+
+
+async def test_cover_with_position_feedback_still_uses_movement_mode(hass):
+    """Regression: a cover that does report current_position must keep
+    waiting for it to move rather than falling back to a state check."""
+    rule = make_cover_rule(retries=0, change_timeout=0.05)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    # Reports "open" immediately but current_position never actually moves:
+    # Movement mode must still fail this, proving the fallback didn't kick in.
+    hass.states.async_set("cover.volet_salon", "closed", {"current_position": 0})
+
+    async def _open(call: ServiceCall) -> None:
+        hass.states.async_set("cover.volet_salon", "open", {"current_position": 0})
+
+    hass.services.async_register("cover", "open_cover", _open)
+    notifications: list[dict] = []
+    hass.services.async_register(
+        "persistent_notification", "create", lambda call: notifications.append(dict(call.data))
+    )
+
+    await hass.services.async_call(
+        "cover", "open_cover", target={"entity_id": "cover.volet_salon"}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert len(notifications) == 1
+
+
 async def test_escalation_runs_once_for_several_failing_entities(
     hass, mock_cover_config_entry
 ):
