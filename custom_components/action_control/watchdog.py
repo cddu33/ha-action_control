@@ -487,7 +487,18 @@ async def async_run_watchdog(
                     expected_state, expected_attributes, rule.tolerances, final_state
                 )
             if result.ok:
-                _LOGGER.debug("Rule '%s': %s verified OK after retry", rule.name, entity_id)
+                if attempt:
+                    _LOGGER.debug(
+                        "Rule '%s': %s verified OK after retry", rule.name, entity_id
+                    )
+                else:
+                    # The entity settled during the plain check_delay wait --
+                    # nothing was ever reissued. Logging this as "after
+                    # retry" would overcount real retries for anyone
+                    # grepping the debug log to see how often they happen.
+                    _LOGGER.debug(
+                        "Rule '%s': %s verified OK, no retry needed", rule.name, entity_id
+                    )
                 _publish(engine, rule, status, RuleStatus.OK, final_state, started_at)
                 return
 
