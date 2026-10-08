@@ -861,6 +861,73 @@ async def test_scene_activation_resolves_immediately_without_retry(hass):
     assert engine.rule_status[rule_id].status is RuleStatus.OK
 
 
+# ---- "verified OK" debug message must not overclaim a retry ----
+
+
+async def test_settling_during_check_delay_is_not_logged_as_a_retry(hass, caplog):
+    """The entity catching up during the plain check_delay wait, with no
+    command ever reissued, must not be logged the same way a real retry
+    is -- that would make every such settle look like a retry when
+    grepping the debug log."""
+    rule = make_light_rule(retries=2)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+
+    async def _turn_on(call) -> None:
+        hass.states.async_set(
+            "light.kitchen", "on", {"brightness": call.data.get("brightness")}
+        )
+
+    hass.services.async_register("light", "turn_on", _turn_on)
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.action_control.watchdog"):
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"brightness": 200},
+            target={"entity_id": "light.kitchen"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert "no retry needed" in caplog.text
+    assert "verified OK after retry" not in caplog.text
+
+
+async def test_a_genuine_retry_is_still_logged_as_a_retry(hass, caplog):
+    rule = make_light_rule(retries=2, retry_delay=0)
+    entry = make_entry(rule)
+    await _setup(hass, entry)
+
+    hass.states.async_set("light.kitchen", "off")
+    calls = []
+
+    async def _turn_on(call) -> None:
+        calls.append(call)
+        if len(calls) >= 2:
+            # Only the reissued (second) call actually applies it.
+            hass.states.async_set(
+                "light.kitchen", "on", {"brightness": call.data.get("brightness")}
+            )
+
+    hass.services.async_register("light", "turn_on", _turn_on)
+
+    with caplog.at_level(logging.DEBUG, logger="custom_components.action_control.watchdog"):
+        await hass.services.async_call(
+            "light",
+            "turn_on",
+            {"brightness": 200},
+            target={"entity_id": "light.kitchen"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+
+    assert "verified OK after retry" in caplog.text
+    assert len(calls) == 2
+
+
 # ---- per-rule info-level log ----
 
 

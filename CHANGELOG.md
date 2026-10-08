@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.6.7]
+
+### Fixed
+- **A check that settles during the plain `check_delay` wait is no longer
+  logged as "verified OK after retry."** Found in a real install's debug
+  log: 53 of 55 zero-retry resolutions (`attempt=0`, confirmed by the
+  per-rule `info` summary) carried that message, because the debug line
+  didn't distinguish "the entity caught up on its own" from "a retry
+  actually fixed it." Grepping the debug log to see how often retries are
+  really needed would have overcounted them almost every time. The two
+  cases now log distinctly ("verified OK after retry" only when
+  `attempt > 0`, "verified OK, no retry needed" otherwise); the published
+  status and `attempt` count themselves were always correct.
+
 ## [0.6.6]
 
 A follow-up audit of 0.6.5: the same false-failure class the light bench
