@@ -979,3 +979,54 @@ async def test_log_entity_info_is_silent_by_default(hass, caplog):
         for record in caplog.records
         if record.name == "custom_components.action_control.watchdog"
     )
+
+
+async def _run_a_failing_light_command(hass, rule):
+    engine = await _setup(hass, make_entry(rule))
+    hass.states.async_set("light.kitchen", "off")
+    notifications: list[dict] = []
+    hass.services.async_register("light", "turn_on", lambda call: None)
+    hass.services.async_register(
+        "persistent_notification", "create", lambda call: notifications.append(dict(call.data))
+    )
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    return engine, notifications
+
+
+async def test_notify_retry_updates_one_notification_with_the_running_count(hass):
+    rule = make_light_rule(notify_retry=True)
+    engine, notifications = await _run_a_failing_light_command(hass, rule)
+
+    retry_id = f"{DOMAIN}_{rule.rule_id}_light.kitchen_retry"
+    retries = [n for n in notifications if n["notification_id"] == retry_id]
+    assert len(retries) == 2
+    assert "1/2" in retries[0]["message"]
+    assert "2/2" in retries[1]["message"]
+    assert "2" in retries[1]["message"].splitlines()[-1]
+    assert engine.retry_counts[rule.rule_id] == {"light.kitchen": 2}
+
+    # A second failing command keeps counting from where the first stopped.
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {"brightness": 200},
+        target={"entity_id": "light.kitchen"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert engine.retry_counts[rule.rule_id] == {"light.kitchen": 4}
+
+
+async def test_retries_are_counted_but_not_notified_by_default(hass):
+    rule = make_light_rule()
+    engine, notifications = await _run_a_failing_light_command(hass, rule)
+
+    assert not any(n["notification_id"].endswith("_retry") for n in notifications)
+    assert engine.retry_counts[rule.rule_id] == {"light.kitchen": 2}

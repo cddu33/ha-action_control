@@ -54,3 +54,6 @@ async def test_sensor_follows_the_rule_status(hass, mock_config_entry):
     assert state.attributes["response_duration"] >= 0
     # Surfaced so the info-log toggle is verifiable without diagnostics.
     assert state.attributes["log_entity_info"] is False
+    assert state.attributes["notify_retry"] is False
+    assert state.attributes["retry_count"] == 0
+    assert state.attributes["retry_counts"] == {}

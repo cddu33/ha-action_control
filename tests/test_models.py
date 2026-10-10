@@ -32,6 +32,7 @@ async def test_round_trip_preserves_every_field(hass):
         escalation_check_delay=5,
         notify_persistent=False,
         notify_service="mobile_app",
+        notify_retry=True,
     )
 
     restored = Rule.from_dict(rule.to_dict())

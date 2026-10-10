@@ -278,6 +278,7 @@ async def test_notifications_are_reachable_without_escalation(hass):
             "escalation_enabled": False,
             "notify_persistent": False,
             "notify_service": "mobile",
+            "notify_retry": True,
         },
     )
     result = await _submit(hass, result)
@@ -287,6 +288,7 @@ async def test_notifications_are_reachable_without_escalation(hass):
     assert rule["escalation_enabled"] is False
     assert rule["notify_persistent"] is False
     assert rule["notify_service"] == "mobile"
+    assert rule["notify_retry"] is True
 
 
 async def test_escalation_without_verification_skips_the_check_step(hass):

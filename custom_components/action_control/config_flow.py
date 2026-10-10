@@ -557,6 +557,7 @@ class ActionControlOptionsFlow(OptionsFlow):
                     c.CONF_LOG_ENTITY_INFO: user_input[c.CONF_LOG_ENTITY_INFO],
                     c.CONF_NOTIFY_PERSISTENT: user_input[c.CONF_NOTIFY_PERSISTENT],
                     c.CONF_NOTIFY_SERVICE: user_input.get(c.CONF_NOTIFY_SERVICE) or None,
+                    c.CONF_NOTIFY_RETRY: user_input[c.CONF_NOTIFY_RETRY],
                 }
             )
             return await self._after("rule_features")
@@ -606,6 +607,10 @@ class ActionControlOptionsFlow(OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Required(
+                    c.CONF_NOTIFY_RETRY,
+                    default=self._draft.get(c.CONF_NOTIFY_RETRY, c.DEFAULT_NOTIFY_RETRY),
+                ): BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="rule_features", data_schema=schema)

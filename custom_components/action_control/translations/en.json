@@ -83,7 +83,8 @@
           "escalation_enabled": "Run a recovery action when it keeps failing",
           "log_entity_info": "Log a summary (entity, outcome, response time) for this rule at info level",
           "notify_persistent": "Notify via a persistent notification",
-          "notify_service": "Also notify via this notify service"
+          "notify_service": "Also notify via this notify service",
+          "notify_retry": "Persistent notification at every retry, with the running retry count"
         }
       },
       "rule_verify": {
@@ -207,6 +208,16 @@
     "reset_escalation_cooldown": {
       "name": "Reset escalation cooldown",
       "description": "Clear a rule's escalation cooldown so it can escalate again immediately.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Rule",
+          "description": "The rule's status sensor."
+        }
+      }
+    },
+    "reset_retry_count": {
+      "name": "Reset retry count",
+      "description": "Reset a rule's retry counter to zero.",
       "fields": {
         "rule_sensor": {
           "name": "Rule",

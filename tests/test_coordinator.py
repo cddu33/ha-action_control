@@ -18,7 +18,7 @@ async def test_escalation_cooldown_persists_across_reload(hass):
 
     engine.arm_escalation_cooldown(rule_id, 300)
     assert not engine.escalation_ready(rule_id)
-    await engine._store.async_save(engine._cooldowns_to_save())
+    await engine._store.async_save(engine._data_to_save())
     await engine.async_unload()
 
     reloaded = ActionControlEngine(hass, entry)
@@ -35,7 +35,7 @@ async def test_expired_cooldowns_are_not_persisted(hass):
     rule_id = next(iter(engine.rules))
 
     engine.arm_escalation_cooldown(rule_id, -1)  # already expired
-    saved = engine._cooldowns_to_save()
+    saved = engine._data_to_save()
     assert rule_id not in saved["cooldowns"]
     await engine.async_unload()
 
@@ -75,3 +75,36 @@ async def test_stale_area_raises_and_clears_a_repair_issue(hass):
     await engine2.async_setup()
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"stale_target_{fixed_rule.rule_id}") is None
     await engine2.async_unload()
+
+
+async def test_retry_counts_persist_across_reload_and_reset(hass):
+    entry = make_entry(make_light_rule())
+    entry.add_to_hass(hass)
+    engine = ActionControlEngine(hass, entry)
+    await engine.async_setup()
+    rule_id = next(iter(engine.rules))
+
+    assert engine.count_retry(rule_id, "light.kitchen") == 1
+    assert engine.count_retry(rule_id, "light.kitchen") == 2
+    await engine._store.async_save(engine._data_to_save())
+    await engine.async_unload()
+
+    reloaded = ActionControlEngine(hass, entry)
+    await reloaded.async_setup()
+    assert reloaded.retry_counts == {rule_id: {"light.kitchen": 2}}
+    reloaded.reset_retry_count(rule_id)
+    assert reloaded.retry_counts == {}
+    await reloaded.async_unload()
+
+
+async def test_retry_counts_of_deleted_rules_are_dropped_on_load(hass):
+    entry = make_entry(make_light_rule())
+    entry.add_to_hass(hass)
+    engine = ActionControlEngine(hass, entry)
+    engine.count_retry("gone", "light.kitchen")
+    await engine._store.async_save(engine._data_to_save())
+
+    reloaded = ActionControlEngine(hass, entry)
+    await reloaded.async_setup()
+    assert reloaded.retry_counts == {}
+    await reloaded.async_unload()

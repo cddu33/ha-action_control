@@ -75,6 +75,9 @@ class Rule:
     # --- notification ---
     notify_persistent: bool = True
     notify_service: str | None = None
+    # A persistent notification at every retry, carrying the running count of
+    # retries for that entity -- not only on the final failure.
+    notify_retry: bool = c.DEFAULT_NOTIFY_RETRY
 
     created_at: str = field(default_factory=_now_iso)
     updated_at: str = field(default_factory=_now_iso)

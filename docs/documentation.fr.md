@@ -273,6 +273,7 @@ L'étape qui décide des autres sections à remplir.
 | Journaliser un résumé pour cette règle au niveau info | Si activé, le résultat final de chaque entité (ok/escalated/failed) pour cette règle est aussi journalisé au niveau `info` — entité, résultat, temps de réponse, nombre de tentatives — visible sans activer le debug. Désactivé par défaut ; la trace détaillée pas à pas reste réservée au journal debug. | désactivé |
 | Notifier via une notification persistante | Crée une `persistent_notification` intitulée `Action Control: <nom de la règle>` en cas d'échec final. | activé |
 | Notifier également via ce service notify | Appelle aussi ce service `notify.*` en cas d'échec final, avec le même titre et le même message. | — |
+| Notification persistante à chaque relance | Crée une `persistent_notification` à chaque relance de la commande (et quand elle est rejouée après l'action de secours), avec le numéro de la tentative et le nombre total de relances pour cette entité. Une seule notification par règle et par entité, mise à jour sur place jusqu'à ce que vous la fermiez. Les relances sont comptées que l'option soit activée ou non — voir `retry_count` sur le capteur de statut. | désactivé |
 
 ### Vérification
 
@@ -524,7 +525,11 @@ textes de notification. Attributs : `entity_id`, `expected_state`,
 `mismatches`, `last_checked` (UTC, ISO 8601), `response_duration`
 (secondes écoulées depuis l'émission de la commande, mesurées de
 l'événement `call_service` jusqu'au statut courant — continue d'augmenter
-tant que l'état est `retrying`, se fige une fois la règle résolue).
+tant que l'état est `retrying`, se fige une fois la règle résolue),
+`retry_count` (relances émises par cette règle, toutes entités
+confondues) et `retry_counts` (la même chose, par entité). Le compteur de
+relances survit aux redémarrages et ne revient à zéro que via le service
+`reset_retry_count`.
 
 Le capteur reflète la **dernière** exécution de la règle. Quand une
 commande vise plusieurs entités, toutes sont surveillées, mais le capteur
@@ -537,8 +542,9 @@ détail entité par entité.
 |---|---|
 | `action_control.run_rule` | Teste une règle à la demande : rejoue un appel de service sur une entité choisie et laisse la règle le vérifier, exactement comme si cet appel avait eu lieu normalement. Champs : la règle (via son capteur de statut), l'entité à tester, et des données de service optionnelles — y inclure une clé `service` pour utiliser autre chose que le premier service configuré de la règle. |
 | `action_control.reset_escalation_cooldown` | Efface le délai de recharge d'une règle pour qu'elle puisse escalader à nouveau immédiatement, sans attendre le délai configuré. |
+| `action_control.reset_retry_count` | Remet à zéro le compteur de relances d'une règle (`retry_count` sur son capteur de statut). |
 
-Les deux utilisent le capteur de statut de la règle pour la sélectionner,
+Les trois utilisent le capteur de statut de la règle pour la sélectionner,
 donc aucun identifiant de règle n'est à saisir à la main.
 
 ## Diagnostics et réparations

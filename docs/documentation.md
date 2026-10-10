@@ -260,6 +260,7 @@ The step that decides which of the other sections you'll be asked to fill in.
 | Log a summary for this rule at info level | When on, every entity's final outcome (ok/escalated/failed) for this rule is also logged at `info` level — entity, outcome, response time, attempt count — visible without enabling debug logging. Off by default; the full step-by-step trace is still only in the debug log. | off |
 | Notify via a persistent notification | Creates a `persistent_notification` titled `Action Control: <rule name>` on final failure. | on |
 | Also notify via this notify service | Also calls this `notify.*` service on final failure, with the same title and message. | — |
+| Persistent notification at every retry | Creates a `persistent_notification` each time the command is retried (and when it is replayed after the recovery action), giving the attempt number and the total number of retries for that entity. One notification per rule and entity, updated in place until you dismiss it. Retries are counted whether or not this is on — see `retry_count` on the status sensor. | off |
 
 ### Verification
 
@@ -494,7 +495,10 @@ texts. Attributes: `entity_id`, `expected_state`, `expected_attributes`,
 `last_checked` (UTC, ISO 8601), `response_duration` (seconds elapsed since
 the command was issued, measured from the moment the `call_service` event
 fired to the current status — keeps growing while `retrying`, settles once
-the rule resolves).
+the rule resolves), `retry_count` (retries this rule has issued, all
+entities together) and `retry_counts` (the same, per entity). The retry
+counter survives restarts and only goes back to zero through the
+`reset_retry_count` service.
 
 The sensor reflects the rule's **latest** run. When one command targets
 several entities, they are all watched, but the sensor keeps the last
@@ -506,8 +510,9 @@ update only — the debug log holds the full per-entity picture.
 |---|---|
 | `action_control.run_rule` | Test a rule on demand: re-issues a service call on a chosen entity and lets the rule verify it, exactly as if that call had happened normally. Fields: the rule (pick its status sensor), the entity to test, and optional service data — include a `service` key in it to use something other than the rule's first configured service. |
 | `action_control.reset_escalation_cooldown` | Clears a rule's escalation cooldown so it can escalate again immediately, instead of waiting out the configured delay. |
+| `action_control.reset_retry_count` | Resets a rule's retry counter (`retry_count` on its status sensor) to zero. |
 
-Both take the rule's status sensor as the way to select it, so no rule id
+All three take the rule's status sensor as the way to select it, so no rule id
 needs to be typed in by hand.
 
 ## Diagnostics and repairs

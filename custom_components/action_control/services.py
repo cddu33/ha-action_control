@@ -1,4 +1,4 @@
-"""Services: run_rule (on-demand test) and reset_escalation_cooldown."""
+"""Services: run_rule (on-demand test), reset_escalation_cooldown, reset_retry_count."""
 from __future__ import annotations
 
 import voluptuous as vol
@@ -14,6 +14,7 @@ from .const import (
     DATA_ENGINE,
     DOMAIN,
     SERVICE_RESET_ESCALATION_COOLDOWN,
+    SERVICE_RESET_RETRY_COUNT,
     SERVICE_RUN_RULE,
 )
 from .coordinator import ActionControlEngine
@@ -27,6 +28,7 @@ RUN_RULE_SCHEMA = vol.Schema(
     }
 )
 RESET_ESCALATION_COOLDOWN_SCHEMA = vol.Schema({vol.Required(ATTR_RULE_SENSOR): cv.entity_id})
+RESET_RETRY_COUNT_SCHEMA = vol.Schema({vol.Required(ATTR_RULE_SENSOR): cv.entity_id})
 
 
 def _resolve_rule(
@@ -79,6 +81,11 @@ async def _async_reset_escalation_cooldown(hass: HomeAssistant, call: ServiceCal
     engine.clear_escalation_cooldown(rule.rule_id)
 
 
+async def _async_reset_retry_count(hass: HomeAssistant, call: ServiceCall) -> None:
+    engine, rule = _resolve_rule(hass, call.data[ATTR_RULE_SENSOR])
+    engine.reset_retry_count(rule.rule_id)
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Register the domain-level services (idempotent across config entry reloads)."""
     if hass.services.has_service(DOMAIN, SERVICE_RUN_RULE):
@@ -90,6 +97,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def reset_escalation_cooldown(call: ServiceCall) -> None:
         await _async_reset_escalation_cooldown(hass, call)
 
+    async def reset_retry_count(call: ServiceCall) -> None:
+        await _async_reset_retry_count(hass, call)
+
     hass.services.async_register(
         DOMAIN, SERVICE_RUN_RULE, run_rule, schema=RUN_RULE_SCHEMA
     )
@@ -99,8 +109,15 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         reset_escalation_cooldown,
         schema=RESET_ESCALATION_COOLDOWN_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESET_RETRY_COUNT,
+        reset_retry_count,
+        schema=RESET_RETRY_COUNT_SCHEMA,
+    )
 
 
 def async_unload_services(hass: HomeAssistant) -> None:
     hass.services.async_remove(DOMAIN, SERVICE_RUN_RULE)
     hass.services.async_remove(DOMAIN, SERVICE_RESET_ESCALATION_COOLDOWN)
+    hass.services.async_remove(DOMAIN, SERVICE_RESET_RETRY_COUNT)

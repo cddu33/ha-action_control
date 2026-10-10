@@ -136,3 +136,22 @@ async def test_reset_escalation_cooldown(hass):
     await hass.async_block_till_done()
 
     assert engine.escalation_ready(rule.rule_id)
+
+
+async def test_reset_retry_count(hass):
+    rule = make_cover_rule()
+    entry = make_entry(rule)
+    engine = await _setup(hass, entry)
+    rule_sensor = _rule_sensor_entity_id(hass, entry, rule.rule_id)
+
+    engine.count_retry(rule.rule_id, "cover.volet_salon")
+    await hass.async_block_till_done()
+    assert hass.states.get(rule_sensor).attributes["retry_count"] == 1
+
+    await hass.services.async_call(
+        DOMAIN, "reset_retry_count", {"rule_sensor": rule_sensor}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert engine.retry_counts == {}
+    assert hass.states.get(rule_sensor).attributes["retry_count"] == 0
