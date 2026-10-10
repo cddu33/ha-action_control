@@ -42,6 +42,9 @@ class ActionControlEngine:
         self.contexts = SelfIssuedContexts()
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._escalation_cooldowns: dict[str, float] = {}
+        # rule_id -> entity_id -> retries issued so far. Persisted with the
+        # cooldowns: a count that resets on every restart says little.
+        self.retry_counts: dict[str, dict[str, int]] = {}
         self._run_tokens: dict[tuple[str, str], int] = {}
         self._tasks: set[asyncio.Task] = set()
         self._runs: dict[tuple[str, str], asyncio.Task] = {}
@@ -147,20 +150,34 @@ class ActionControlEngine:
 
     def arm_escalation_cooldown(self, rule_id: str, seconds: float) -> None:
         self._escalation_cooldowns[rule_id] = time.time() + seconds
-        self._store.async_delay_save(self._cooldowns_to_save, STORAGE_SAVE_DELAY)
+        self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
 
     def clear_escalation_cooldown(self, rule_id: str) -> None:
         if self._escalation_cooldowns.pop(rule_id, None) is not None:
-            self._store.async_delay_save(self._cooldowns_to_save, STORAGE_SAVE_DELAY)
+            self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
 
-    def _cooldowns_to_save(self) -> dict[str, Any]:
+    def count_retry(self, rule_id: str, entity_id: str) -> int:
+        """Record one more retry for (rule, entity) and return the new count."""
+        counts = self.retry_counts.setdefault(rule_id, {})
+        counts[entity_id] = counts.get(entity_id, 0) + 1
+        self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
+        async_dispatcher_send(self.hass, SIGNAL_RULE_UPDATE, rule_id)
+        return counts[entity_id]
+
+    def reset_retry_count(self, rule_id: str) -> None:
+        if self.retry_counts.pop(rule_id, None) is not None:
+            self._store.async_delay_save(self._data_to_save, STORAGE_SAVE_DELAY)
+            async_dispatcher_send(self.hass, SIGNAL_RULE_UPDATE, rule_id)
+
+    def _data_to_save(self) -> dict[str, Any]:
         now = time.time()
         return {
             "cooldowns": {
                 rule_id: deadline
                 for rule_id, deadline in self._escalation_cooldowns.items()
                 if deadline > now
-            }
+            },
+            "retry_counts": self.retry_counts,
         }
 
     def set_status(self, rule_id: str, status: RuleRunStatus) -> None:
@@ -200,6 +217,12 @@ class ActionControlEngine:
                 rule_id: deadline
                 for rule_id, deadline in (stored.get("cooldowns") or {}).items()
                 if deadline > now
+            }
+            # Counts of rules deleted since are dropped, not carried forever.
+            self.retry_counts = {
+                rule_id: dict(counts)
+                for rule_id, counts in (stored.get("retry_counts") or {}).items()
+                if rule_id in self.rules
             }
         self._check_stale_targets()
         self._unsub_listener = self.hass.bus.async_listen(

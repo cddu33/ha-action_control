@@ -74,7 +74,8 @@ flowchart TD
   call without waiting for one to happen, and `reset_escalation_cooldown`
   to let a rule escalate again right away.
 - **Notifications** — persistent notification and/or a `notify.*` service
-  of your choice, per rule.
+  of your choice, per rule; optionally a persistent notification at every
+  retry too, with a retry counter kept on the rule's status sensor.
 - **Built-in anti-loop protection** — every command the integration
   re-issues carries its own tracked `Context`, so the resulting
   `call_service` event is recognized and ignored before it can re-trigger

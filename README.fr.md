@@ -74,7 +74,9 @@ flowchart TD
   `reset_escalation_cooldown` pour qu'une règle puisse escalader à nouveau
   immédiatement.
 - **Notifications** — notification persistante et/ou service `notify.*` de
-  votre choix, par règle.
+  votre choix, par règle ; en option, une notification persistante à chaque
+  relance aussi, avec un compteur de relances sur le capteur de statut de
+  la règle.
 - **Protection anti-boucle intégrée** — chaque commande réémise porte son
   propre `Context` mémorisé, donc l'événement `call_service` correspondant
   est reconnu et ignoré avant de pouvoir redéclencher une règle. Aucune

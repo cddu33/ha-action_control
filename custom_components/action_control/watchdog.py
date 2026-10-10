@@ -287,6 +287,55 @@ async def _notify(
         )
 
 
+async def _count_retry(
+    engine: ActionControlEngine,
+    rule: Rule,
+    entity_id: str,
+    domain: str,
+    service: str,
+    attempt: int | None,
+) -> None:
+    """Count a retry of the command and, if asked, notify it.
+
+    `attempt` is None for the replay that follows the recovery action. The
+    notification id is stable per (rule, entity): it stays until dismissed,
+    and each retry updates it with the new total instead of stacking.
+    """
+    count = engine.count_retry(rule.rule_id, entity_id)
+    if not rule.notify_retry:
+        return
+    hass = engine.hass
+    texts = messages.texts_for(hass)
+    lines = [
+        messages.render(texts, "retry_replay", entity_id=entity_id, call=f"{domain}.{service}")
+        if attempt is None
+        else messages.render(
+            texts,
+            "retry",
+            entity_id=entity_id,
+            call=f"{domain}.{service}",
+            attempt=attempt,
+            retries=rule.retries,
+        ),
+        messages.render(texts, "retry_count", count=count),
+    ]
+    ctx = engine.contexts.new_context()
+    await _safe_call(
+        lambda: hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "title": f"Action Control: {rule.name}",
+                "message": "\n".join(lines),
+                "notification_id": f"{DOMAIN}_{rule.rule_id}_{entity_id}_retry",
+            },
+            context=ctx,
+        ),
+        "Action Control: retry notification for rule '%s' failed",
+        rule.name,
+    )
+
+
 async def async_run_watchdog(
     engine: ActionControlEngine,
     rule: Rule,
@@ -419,6 +468,7 @@ async def async_run_watchdog(
                     hass.states.get(entity_id),
                     started_at,
                 )
+                await _count_retry(engine, rule, entity_id, domain, service, attempt)
                 await _reissue_command(
                     engine, domain, service, entity_id, service_data, expected_state
                 )
@@ -475,6 +525,7 @@ async def async_run_watchdog(
                     service,
                 )
                 _publish(engine, rule, status, RuleStatus.RETRYING, final_state, started_at)
+                await _count_retry(engine, rule, entity_id, domain, service, attempt)
                 await _reissue_command(
                     engine, domain, service, entity_id, service_data, expected_state
                 )
@@ -544,6 +595,7 @@ async def async_run_watchdog(
                 service,
                 entity_id,
             )
+            await _count_retry(engine, rule, entity_id, domain, service, None)
             await _reissue_command(
                 engine, domain, service, entity_id, service_data, expected_state
             )

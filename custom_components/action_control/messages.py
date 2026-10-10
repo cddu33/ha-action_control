@@ -18,6 +18,9 @@ _TEXTS: dict[str, dict[str, str]] = {
         "mismatch_line": "- {attribute}: expected {expected}, actual {actual}",
         "mismatch": "{attribute}: expected {expected}, actual {actual}",
         "different_from": "different from {baseline}",
+        "retry": "{entity_id} did not respond to {call}: retry {attempt}/{retries}.",
+        "retry_replay": "{entity_id}: {call} replayed after the recovery action.",
+        "retry_count": "Retried {count} time(s) in total.",
     },
     "fr": {
         "failure": "{entity_id} n'a pas atteint l'état/les attributs demandés.",
@@ -25,6 +28,9 @@ _TEXTS: dict[str, dict[str, str]] = {
         "mismatch_line": "- {attribute} : attendu {expected}, actuel {actual}",
         "mismatch": "{attribute} : attendu {expected}, actuel {actual}",
         "different_from": "différent de {baseline}",
+        "retry": "{entity_id} n'a pas répondu à {call} : relance {attempt}/{retries}.",
+        "retry_replay": "{entity_id} : {call} rejoué après l'action de secours.",
+        "retry_count": "Relancé {count} fois au total.",
     },
 }
 

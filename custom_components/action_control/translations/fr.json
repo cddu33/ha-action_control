@@ -83,7 +83,8 @@
           "escalation_enabled": "Déclencher une action de secours en cas d'échec persistant",
           "log_entity_info": "Journaliser un résumé (entité, résultat, temps de réponse) pour cette règle au niveau info",
           "notify_persistent": "Notifier via une notification persistante",
-          "notify_service": "Notifier également via ce service notify"
+          "notify_service": "Notifier également via ce service notify",
+          "notify_retry": "Notification persistante à chaque relance, avec le nombre total de relances"
         }
       },
       "rule_verify": {
@@ -207,6 +208,16 @@
     "reset_escalation_cooldown": {
       "name": "Réinitialiser le cooldown d'escalade",
       "description": "Efface le cooldown d'escalade d'une règle pour qu'elle puisse escalader à nouveau immédiatement.",
+      "fields": {
+        "rule_sensor": {
+          "name": "Règle",
+          "description": "Le capteur de statut de la règle."
+        }
+      }
+    },
+    "reset_retry_count": {
+      "name": "Réinitialiser le compteur de relances",
+      "description": "Remet à zéro le compteur de relances d'une règle.",
       "fields": {
         "rule_sensor": {
           "name": "Règle",

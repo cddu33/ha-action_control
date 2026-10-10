@@ -23,3 +23,12 @@ reset_escalation_cooldown:
         entity:
           integration: action_control
           domain: sensor
+
+reset_retry_count:
+  fields:
+    rule_sensor:
+      required: true
+      selector:
+        entity:
+          integration: action_control
+          domain: sensor

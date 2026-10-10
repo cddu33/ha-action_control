@@ -57,6 +57,10 @@ class RuleStatusSensor(ActionControlEntity, SensorEntity):
         return self._engine.rule_status.get(self._rule.rule_id, RuleRunStatus())
 
     @property
+    def _retry_counts(self) -> dict[str, int]:
+        return self._engine.retry_counts.get(self._rule.rule_id, {})
+
+    @property
     def native_value(self) -> str:
         return self._status.status.value
 
@@ -77,6 +81,11 @@ class RuleStatusSensor(ActionControlEntity, SensorEntity):
             "mismatches": status.mismatches,
             "last_checked": status.last_checked,
             "response_duration": status.response_duration,
+            # Every retry this rule has issued since the last reset, all
+            # entities together, and per entity.
+            "retry_count": sum(self._retry_counts.values()),
+            "retry_counts": dict(self._retry_counts),
+            "notify_retry": self._rule.notify_retry,
             # Config, not run state: there is otherwise no way to tell from
             # the UI whether this rule's info-level summary is switched on.
             "log_entity_info": self._rule.log_entity_info,

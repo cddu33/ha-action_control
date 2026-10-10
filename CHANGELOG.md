@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions match
 the published GitHub releases — which is what HACS offers users as an update.
 
+## [0.7.0]
+
+### Added
+- **Persistent notification at every retry** (rule option, off by default).
+  Each time a rule re-issues a command — and when it replays it after the
+  recovery action — a `persistent_notification` gives the attempt number
+  and the total number of retries for that entity. It is one notification
+  per rule and entity, updated in place, so it stays until dismissed
+  without piling up.
+- **Retry counter.** Every retry is counted, whether or not the option
+  above is on, and shown on the rule's status sensor as `retry_count`
+  (all entities) and `retry_counts` (per entity). The count is persisted
+  across restarts, alongside the escalation cooldowns.
+- **`action_control.reset_retry_count`** service to put a rule's counter
+  back to zero.
+
 ## [0.6.7]
 
 ### Fixed

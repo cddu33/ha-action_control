@@ -86,6 +86,8 @@ DEFAULT_ESCALATION_CHECK_DELAY = 5.0
 
 CONF_NOTIFY_PERSISTENT = "notify_persistent"
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_NOTIFY_RETRY = "notify_retry"
+DEFAULT_NOTIFY_RETRY = False
 
 CONF_CREATED_AT = "created_at"
 CONF_UPDATED_AT = "updated_at"
@@ -102,6 +104,7 @@ CONTEXT_TTL = 120  # seconds a self-issued context id is remembered
 # services
 SERVICE_RUN_RULE = "run_rule"
 SERVICE_RESET_ESCALATION_COOLDOWN = "reset_escalation_cooldown"
+SERVICE_RESET_RETRY_COUNT = "reset_retry_count"
 ATTR_RULE_SENSOR = "rule_sensor"
 ATTR_ENTITY_ID = "entity_id"
 ATTR_SERVICE_DATA = "service_data"
